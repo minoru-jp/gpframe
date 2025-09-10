@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=70", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gpframe"
+version = "0.0.13"
+description = "A general-purpose framework for routine execution with concurrency and event handling."
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [
+    { name = "minoru_jp" }
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+keywords = [
+    "general-purpose",
+    "framework",
+    "concurrency",
+    "async",
+    "subprocess",
+    "event",
+    "lifecycle",
+    "context",
+    "outcome",
+    "exception-handling",
+    "wrapper",
+    "skeleton",
+    "task",
+    "workflow",
+    "execution",
+    "state-management"
+]
+
+[project.urls]
+Homepage = "https://github.com/minoru-jp/gpframe"
+Source = "https://github.com/minoru-jp/gpframe"
+Issues = "https://github.com/minoru-jp/gpframe/issues"
+
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["gpframe*"]
