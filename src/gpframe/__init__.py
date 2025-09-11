@@ -132,21 +132,45 @@ A read-write view of a registry.
 String Conversion Utilities
 ---------------------------
 Both `MessageReader` and `MessageUpdater` provide the following helpers to
-convert string values stored in the registry:
+convert string values stored in the registry.
 
-- str_to_int(key, default=...) -> int  
+Common Behavior
+
+- If the key does not exist and no default is provided, a `KeyError` is raised.  
+- If a default value is provided and its type already matches the *converted* type of the method
+  (e.g., `int` for `string_to_int`, `float` for `string_to_float`, `bool` for `string_to_bool`, `str` for `string`),  
+  then the default is returned directly without going through `prep` or `valid`.  
+- Otherwise, the stored value (or the default) is first converted to `str` and processed.
+
+- `prep` may be given as either a single callable `(str -> str)` or a tuple of such callables.  
+  If a tuple is provided, each function is applied in order to the string before conversion.  
+- After conversion, the resulting value is passed to `valid` (if applicable).  
+  If `valid` returns `False`, a `ValueError` is raised.
+
+Methods
+
+- string(key, default=..., *, prep=..., valid=...) -> str  
+  Retrieve the value by key, convert it with `str(...)`, and return it.  
+  This acts as a string-typed getter regardless of the stored type.  
+  The string may be preprocessed by `prep` and must satisfy `valid`.
+
+- string_to_int(key, default=..., *, prep=..., valid=...) -> int  
   Retrieve a string by key and convert it to an integer.  
-  Supports standard prefixes (0x, 0o, 0b) via `int(string, 0)`.
+  Supports standard prefixes (0x, 0o, 0b) via `int(string, 0)`.  
+  Preprocessing and validation are applied as described above.
 
-- str_to_float(key, default=...) -> float  
-  Retrieve a string by key and convert it to a float.
+- string_to_float(key, default=..., *, prep=..., valid=...) -> float  
+  Retrieve a string by key and convert it to a float.  
+  Preprocessing and validation are applied as described above.
 
-- str_to_bool(key, default=..., *, true=(), false=()) -> bool  
+- string_to_bool(key, default=..., *, prep=..., true=(), false=()) -> bool  
   Retrieve a string by key and convert it to a boolean.  
-  If neither `true` nor `false` sets are provided, non-empty strings are True.  
-  If only `true` is given, returns True if the string matches, False otherwise.  
-  If only `false` is given, returns False if the string matches, True otherwise.  
-  If both are given, raises ValueError if the string does not match either.
+  Preprocessing is applied as described above.  
+  If neither `true` nor `false` sets are provided, non-empty strings evaluate to `True`.  
+  If only `true` is given, returns `True` if the string matches, `False` otherwise.  
+  If only `false` is given, returns `False` if the string matches, `True` otherwise.  
+  If both are given, raises `ValueError` if the string does not match either.
+
 
        
 Lifecycle and Access Rules

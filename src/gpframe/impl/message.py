@@ -11,7 +11,76 @@ D = TypeVar("D")
 class _NO_DEFAULT(Enum):
     _ = "dummy member"
 
-class MessageUpdater(ABC):
+def _AllStr(v: str) -> bool:
+    return True
+
+def _AllInt(v: int) -> bool:
+    return True
+
+def _AllFloat(v: float) -> bool:
+    return True
+
+def _AllBool(v: bool) -> bool:
+    return True
+
+def _NoEffect(v: str) -> str:
+    return v
+
+class MessageReader(ABC):
+    __slots__ = ()
+    @abstractmethod
+    def geta(self, key: Any, default: Any = _NO_DEFAULT) -> Any:
+        ...
+    @abstractmethod
+    def getd(self, key: Any, typ: type[T], default: D) -> T | D:
+        ...
+    @abstractmethod
+    def get(self, key: Any, typ: type[T]) -> T:
+        ...
+    @abstractmethod
+    def string(
+        self,
+        key: Any,
+        default: Any = _NO_DEFAULT,
+        *,
+        prep: Callable[[str], str] | tuple[Callable[[str], str], ...] = _NoEffect,
+        valid: Callable[[str], bool] = _AllStr,
+    ) -> str:
+        ...
+    @abstractmethod
+    def string_to_int(
+        self,
+        key: Any,
+        default: int | Any = _NO_DEFAULT,
+        *,
+        prep: Callable[[str], str] | tuple[Callable[[str], str], ...] = _NoEffect,
+        valid: Callable[[int], bool] = _AllInt,
+    ) -> int:
+        ...
+    @abstractmethod
+    def string_to_float(
+        self,
+        key: Any,
+        default: float | Any = _NO_DEFAULT,
+        *,
+        prep: Callable[[str], str] | tuple[Callable[[str], str], ...] = _NoEffect,
+        valid: Callable[[float], bool] = _AllFloat,
+    ) -> float:
+        ...
+    @abstractmethod
+    def string_to_bool(
+        self,
+        key: Any,
+        default: bool | Any = _NO_DEFAULT,
+        *,
+        prep: Callable[[str], str] | tuple[Callable[[str], str], ...] = _NoEffect,
+        true: tuple[str, ...] = (),
+        false: tuple[str, ...] = (),
+        valid: Callable[[bool], bool] = _AllBool,
+    ) -> bool:
+        ...
+
+class MessageUpdater(MessageReader):
     __slots__ = ()
     @abstractmethod
     def geta(self, key: Any, default: Any = _NO_DEFAULT) -> Any:
@@ -31,37 +100,6 @@ class MessageUpdater(ABC):
     @abstractmethod
     def remove(self, key: Any, default: Any = None) -> Any:
         ...
-    @abstractmethod
-    def str_to_int(self, key: Any, default: Any = _NO_DEFAULT) -> int:
-        ...
-    @abstractmethod
-    def str_to_float(self, key: Any, default: Any = _NO_DEFAULT) -> float:
-        ...
-    @abstractmethod
-    def str_to_bool(self, key: Any, default: Any = _NO_DEFAULT, *, true: tuple[str, ...] = (), false: tuple[str, ...] = ()) -> bool:
-        ...
-
-class MessageReader(ABC):
-    __slots__ = ()
-    @abstractmethod
-    def geta(self, key: Any, default: Any = _NO_DEFAULT) -> Any:
-        ...
-    @abstractmethod
-    def getd(self, key: Any, typ: type[T], default: D) -> T | D:
-        ...
-    @abstractmethod
-    def get(self, key: Any, typ: type[T]) -> T:
-        ...
-    @abstractmethod
-    def str_to_int(self, key: Any, default: Any = _NO_DEFAULT) -> int:
-        ...
-    @abstractmethod
-    def str_to_float(self, key: Any, default: Any = _NO_DEFAULT) -> float:
-        ...
-    @abstractmethod
-    def str_to_bool(self, key: Any, default: Any = _NO_DEFAULT, *, true: tuple[str, ...] = (), false: tuple[str, ...] = ()) -> bool:
-        ...
-
 
 class MessageRegistry:
     __slots__ = ("_usage_state_checker", "_lock", "_map", "_updater", "_reader")
@@ -153,16 +191,89 @@ class MessageRegistry:
             else:
                 raise RuntimeError
     
-    def str_to_int(self, key: Any, default: Any = _NO_DEFAULT) -> int:
-        string = str(self.geta(key, default)).strip()
-        return int(string, 0)
+    def _value_with_returns_with_default(self, key: Any, default: Any, typ: type[T]) -> tuple[T, bool]:
+        self._usage_state_checker()
+        with self._lock:
+            if self._map is not None:
+                if key in self._map:
+                    return self._map[key], False
+                else:
+                    if isinstance(default, typ):
+                        return default, True
+                    if default is _NO_DEFAULT:
+                        raise KeyError
+                    return default, False                    
+            else:
+                raise RuntimeError
+    
+    def string(
+        self,
+        key: Any,
+        default: Any = _NO_DEFAULT,
+        *,
+        prep: Callable[[str], str] | tuple[Callable[[str], str], ...] = _NoEffect,
+        valid: Callable[[str], bool] = _AllStr,
+    ) -> str:
+        string = str(self.geta(key, default))
+        for pre_proc in prep if isinstance(prep, tuple) else (prep,):
+            string = pre_proc(string)
+        if not valid(string):
+            raise ValueError
+        return string
 
-    def str_to_float(self, key: Any, default: Any = _NO_DEFAULT) -> float:
-        string = str(self.geta(key, default)).strip()
-        return float(string)
+    def string_to_int(
+        self,
+        key: Any,
+        default: int | Any = _NO_DEFAULT,
+        *,
+        prep: Callable[[str], str] | tuple[Callable[[str], str], ...] = _NoEffect,
+        valid: Callable[[int], bool] = _AllInt,
+    ) -> int:
+        value, returns_with_default = self._value_with_returns_with_default(key, default, int)
+        if returns_with_default:
+            return default
+        string = str(value)
+        for pre_proc in prep if isinstance(prep, tuple) else (prep,):
+            string = pre_proc(string)
+        integer = int(string, 0)
+        if not valid(integer):
+            raise ValueError
+        return integer
 
-    def str_to_bool(self, key: Any, default: Any = _NO_DEFAULT, *, true: tuple[str, ...] = (), false: tuple[str, ...] = ()) -> bool:
-        string = str(self.geta(key, default)).strip()
+    def string_to_float(
+        self,
+        key: Any,
+        default: float | Any = _NO_DEFAULT,
+        *,
+        prep: Callable[[str], str] | tuple[Callable[[str], str], ...] = _NoEffect,
+        valid: Callable[[float], bool] = _AllFloat,
+    ) -> float:
+        value, returns_with_default = self._value_with_returns_with_default(key, default, float)
+        if returns_with_default:
+            return default
+        string = str(value)
+        for pre_proc in prep if isinstance(prep, tuple) else (prep,):
+            string = pre_proc(string)
+        float_value = float(string)
+        if not valid(float_value):
+            raise ValueError
+        return float_value
+
+    def string_to_bool(
+        self,
+        key: Any,
+        default: bool | Any = _NO_DEFAULT,
+        *,
+        prep: Callable[[str], str] | tuple[Callable[[str], str], ...] = _NoEffect,
+        true: tuple[str, ...] = (),
+        false: tuple[str, ...] = (),
+    ) -> bool:
+        value, returns_with_default = self._value_with_returns_with_default(key, default, bool)
+        if returns_with_default:
+            return default
+        string = str(value)
+        for pre_proc in prep if isinstance(prep, tuple) else (prep,):
+            string = pre_proc(string)
         if not true and not false:
             return bool(string)
         if true and not false:
@@ -200,12 +311,43 @@ class MessageRegistry:
                 return outer.apply(key, typ, fn, default)
             def remove(self, key: Any, default: Any = None) -> Any:
                 return outer.remove(key, default)
-            def str_to_int(self, key: Any, default: Any = _NO_DEFAULT) -> int:
-                return outer.str_to_int(key, default)
-            def str_to_float(self, key: Any, default: Any = _NO_DEFAULT) -> float:
-                return outer.str_to_float(key, default)
-            def str_to_bool(self, key: Any, default: Any = _NO_DEFAULT, *, true: tuple[str, ...] = (), false: tuple[str, ...] = ()) -> bool:
-                return outer.str_to_bool(key, default, true = true, false = false)
+            def string(
+                self,
+                key: Any,
+                default: Any = _NO_DEFAULT,
+                *,
+                prep: Callable[[str], str] | tuple[Callable[[str], str], ...] = _NoEffect,
+                valid: Callable[[str], bool] = _AllStr,
+            ) -> str:
+                return outer.string(key, default, prep = prep, valid = valid)
+            def string_to_int(
+                self,
+                key: Any,
+                default: int | Any = _NO_DEFAULT,
+                *,
+                prep: Callable[[str], str] | tuple[Callable[[str], str], ...] = _NoEffect,
+                valid: Callable[[int], bool] = _AllInt,
+            ) -> int:
+                return outer.string_to_int(key, default, prep = prep, valid = valid)
+            def string_to_float(
+                self,
+                key: Any,
+                default: float | Any = _NO_DEFAULT,
+                *,
+                prep: Callable[[str], str] | tuple[Callable[[str], str], ...] = _NoEffect,
+                valid: Callable[[float], bool] = _AllFloat,
+            ) -> float:
+                return outer.string_to_float(key, default, prep = prep, valid = valid)
+            def string_to_bool(
+                self,
+                key: Any,
+                default: bool | Any = _NO_DEFAULT,
+                *,
+                prep: Callable[[str], str] | tuple[Callable[[str], str], ...] = _NoEffect,
+                true: tuple[str, ...] = (),
+                false: tuple[str, ...] = (),
+            ) -> bool:
+                return outer.string_to_bool(key, default, prep = prep, true = true, false = false)
             def __str__(self):
                 return outer.__str__()
             def __reduce__(self):
@@ -227,12 +369,43 @@ class MessageRegistry:
                 return outer.getd(key, typ, default)
             def get(self, key: Any, typ: type[T]) -> T:
                 return outer.get(key, typ)
-            def str_to_int(self, key: Any, default: Any = _NO_DEFAULT) -> int:
-                return outer.str_to_int(key, default)
-            def str_to_float(self, key: Any, default: Any = _NO_DEFAULT) -> float:
-                return outer.str_to_float(key, default)
-            def str_to_bool(self, key: Any, default: Any = _NO_DEFAULT, *, true: tuple[str, ...] = (), false: tuple[str, ...] = ()) -> bool:
-                return outer.str_to_bool(key, default, true = true, false = false)
+            def string(
+                self,
+                key: Any,
+                default: Any = _NO_DEFAULT,
+                *,
+                prep: Callable[[str], str] | tuple[Callable[[str], str], ...] = _NoEffect,
+                valid: Callable[[str], bool] = _AllStr,
+            ) -> str:
+                return outer.string(key, default, prep = prep, valid = valid)
+            def string_to_int(
+                self,
+                key: Any,
+                default: int | Any = _NO_DEFAULT,
+                *,
+                prep: Callable[[str], str] | tuple[Callable[[str], str], ...] = _NoEffect,
+                valid: Callable[[int], bool] = _AllInt,
+            ) -> int:
+                return outer.string_to_int(key, default, prep = prep, valid = valid)
+            def string_to_float(
+                self,
+                key: Any,
+                default: float | Any = _NO_DEFAULT,
+                *,
+                prep: Callable[[str], str] | tuple[Callable[[str], str], ...] = _NoEffect,
+                valid: Callable[[float], bool] = _AllFloat,
+            ) -> float:
+                return outer.string_to_float(key, default, prep = prep, valid = valid)
+            def string_to_bool(
+                self,
+                key: Any,
+                default: bool | Any = _NO_DEFAULT,
+                *,
+                prep: Callable[[str], str] | tuple[Callable[[str], str], ...] = _NoEffect,
+                true: tuple[str, ...] = (),
+                false: tuple[str, ...] = (),
+            ) -> bool:
+                return outer.string_to_bool(key, default, prep = prep, true = true, false = false)
             def __str__(self):
                 return outer.__str__()
             def __reduce__(self):
