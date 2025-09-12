@@ -352,7 +352,7 @@ def create_builder_role(routine: Routine[R], share: Callable[[], _FrameSynchroni
                     if routine_sync is None:
                         raise RuntimeError("BUG: routine_sync is still None")
                     return routine_sync
-                return base_state.phase_role.interface.on_frame_dispatched(fn)
+                return base_state.phase_role.interface.on_load(fn)
             
             role = create_builder_role(routine, frame_sync_getter)
             return role.interface
