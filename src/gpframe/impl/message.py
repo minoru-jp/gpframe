@@ -116,7 +116,7 @@ class MessageRegistry:
         self._reader = self._create_reader()
     
     def update_map_unsafe(self, other: dict):
-        assert self._map
+        assert self._map is not None
         self._map.update(other)
     
     def geta(self, key: Any, default: Any = _NO_DEFAULT) -> Any:
