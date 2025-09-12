@@ -8,7 +8,7 @@ import inspect
 import logging
 
 from ..api.builder import FrameBuilderType
-from ..api.outcome import Outcome
+# from ..api.outcome import Outcome
 
 from .routine.base import RoutineExecution
 from .routine.synchronous import SyncRoutine
@@ -35,10 +35,10 @@ from .routine.result import RoutineResultSource
 from .handler.event import EventHandlerWrapper
 from .handler.event import EventHandler
 
-from .outcome import OutcomeSource
+# from .outcome import OutcomeSource
 
-from .handler.terminated import TerminatedHandlerWrapper
-from .handler.terminated import TerminatedHandler
+# from .handler.terminated import TerminatedHandlerWrapper
+# from .handler.terminated import TerminatedHandler
 
 class TerminatedError(Exception):
     """Raised when accessing a context resource after frame termination.
@@ -75,7 +75,7 @@ class _BaseState(Generic[R]):
     event_handlers: dict[str, EventHandlerWrapper]
     redo_handler: RedoHandlerWrapper
     exception_handler: ExceptionHandlerWrapper
-    terminated_callback: TerminatedHandlerWrapper
+    #terminated_callback: TerminatedHandlerWrapper
     
     environments: dict
     requests: dict
@@ -115,7 +115,7 @@ class _Updater:
             },
             redo_handler = RedoHandlerWrapper(),
             exception_handler = ExceptionHandlerWrapper(),
-            terminated_callback = TerminatedHandlerWrapper(),
+            #terminated_callback = TerminatedHandlerWrapper(),
             environments = {},
             requests = {},
             routine_timeout = None,
@@ -228,18 +228,18 @@ class _Updater:
                 contexts
             )
     
-    def create_outcome_source(
-            self,
-            routine_sync: _FrameSynchronization,
-        ) -> OutcomeSource:
-        requests = routine_sync.request_map.copy_map_without_usage_state_check()
-        event_msg = routine_sync.event_msg_map.copy_map_without_usage_state_check()
-        routine_msg = routine_sync.routine_msg_map.copy_map_without_usage_state_check()
+    # def create_outcome_source(
+    #         self,
+    #         routine_sync: _FrameSynchronization,
+    #     ) -> OutcomeSource:
+    #     requests = routine_sync.request_map.copy_map_without_usage_state_check()
+    #     event_msg = routine_sync.event_msg_map.copy_map_without_usage_state_check()
+    #     routine_msg = routine_sync.routine_msg_map.copy_map_without_usage_state_check()
 
-        return OutcomeSource(
-            requests,
-            event_msg,
-            routine_msg)
+    #     return OutcomeSource(
+    #         requests,
+    #         event_msg,
+    #         routine_msg)
 
     def cleanup_maps(self, routine_sync: _FrameSynchronization) -> None:
         routine_sync.environment_map.clear_map_unsafe()
@@ -303,13 +303,11 @@ def create_builder_role(routine: Routine[R], share: Callable[[], _FrameSynchroni
 
         def set_environments(self, environments: dict):
             def fn():
-                #base_state.environments = dict(environments)
                 routine_sync.environment_map.update_map_unsafe(environments)
             base_state.phase_role.interface.on_load(fn)
         
         def set_requests(self, requests: dict):
             def fn():
-                #base_state.environments = dict(environments)
                 routine_sync.request_map.update_map_unsafe(requests)
             base_state.phase_role.interface.on_load(fn)
         
@@ -318,10 +316,10 @@ def create_builder_role(routine: Routine[R], share: Callable[[], _FrameSynchroni
                 base_state.exception_handler.set_handler(handler)
             base_state.phase_role.interface.on_load(fn)
         
-        def set_on_terminated(self, handler: TerminatedHandler):
-            def fn():
-                base_state.terminated_callback.set_handler(handler)
-            base_state.phase_role.interface.on_load(fn)
+        # def set_on_terminated(self, handler: TerminatedHandler):
+        #     def fn():
+        #         base_state.terminated_callback.set_handler(handler)
+        #     base_state.phase_role.interface.on_load(fn)
         
         def set_on_redo(self, handler: RedoHandler[R]):
             def fn():

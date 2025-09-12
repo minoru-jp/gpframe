@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, Coroutine
 
 from ..routine.result import NO_VALUE
 from ..handler.errors import HandledError
-from ..outcome import Outcome
+# from ..outcome import Outcome
 
 
 if TYPE_CHECKING:
@@ -28,7 +28,8 @@ class Circuit:
         self.contexts = contexts
 
     
-    async def coroutine(self) -> Coroutine[Any, Any, None]:
+    #async def coroutine(self) -> Coroutine[Any, Any, None]:
+    async def coroutine(self) -> None:
 
         base_state = self.base_state
         updater = self.updater
@@ -122,11 +123,19 @@ class Circuit:
                 if not await asyncio.shield(base_state.exception_handler(ectx, e)):
                     raise
 
-
-            outcome: Outcome | None = None
+            # outcome: Outcome | None = None
+            # def atomic_with_terminating():
+            #     nonlocal outcome
+            #     outcome = updater.create_outcome_source(routine_sync).interface
+            #     if not routine_sync.is_derived:
+            #         updater.cleanup_maps(routine_sync)
+            #     routine_sync.routine_execution.cleanup(
+            #         base_state.frame_name,
+            #         base_state.logger,
+            #         base_state.cleanup_timeout)
+            # base_state.phase_role.interface.to_terminated(atomic_with_terminating)
+            # outcome: Outcome | None = None
             def atomic_with_terminating():
-                nonlocal outcome
-                outcome = updater.create_outcome_source(routine_sync).interface
                 if not routine_sync.is_derived:
                     updater.cleanup_maps(routine_sync)
                 routine_sync.routine_execution.cleanup(
@@ -135,13 +144,13 @@ class Circuit:
                     base_state.cleanup_timeout)
             base_state.phase_role.interface.to_terminated(atomic_with_terminating)
 
-            if outcome is None:
-                raise RuntimeError("BUG: outcome is None")
+            # if outcome is None:
+            #     raise RuntimeError("BUG: outcome is None")
             
-            base_state = self.base_state # for type inference support
-            try:
-                await asyncio.shield(base_state.terminated_callback(outcome))
-            except HandledError as e:
-                if not await asyncio.shield(base_state.exception_handler(ectx, e)):
-                    raise
+            # base_state = self.base_state # for type inference support
+            # try:
+            #     await asyncio.shield(base_state.terminated_callback(outcome))
+            # except HandledError as e:
+            #     if not await asyncio.shield(base_state.exception_handler(ectx, e)):
+            #         raise
 

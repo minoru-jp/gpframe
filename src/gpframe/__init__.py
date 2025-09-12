@@ -263,7 +263,7 @@ from .api.frame import Frame
 from .api.contexts import EventContext
 from .api.contexts import RoutineContext
 
-from .api.outcome import Outcome
+# from .api.outcome import Outcome
 
 from .impl.routine.result import NO_VALUE
 
@@ -277,7 +277,7 @@ from .impl.handler.exception import Throw
 __all__ = ("FrameBuilder", "FrameBuilderType",
            "Frame",
            "EventContext", "RoutineContext",
-           "Outcome",
+           #"Outcome",
            "NO_VALUE",
            "TerminatedError", 
            "TaskTimeoutError", "ThreadCleanupTimeoutError",

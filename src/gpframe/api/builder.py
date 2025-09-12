@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from ..impl.handler.event import EventHandler
     from ..impl.handler.redo import RedoHandler
     from ..impl.handler.exception import ExceptionHandler
-    from ..impl.handler.terminated import TerminatedHandler
+    # from ..impl.handler.terminated import TerminatedHandler
 
 
 def FrameBuilder(routine: Routine[R], **options) -> FrameBuilderType[R]:
@@ -54,9 +54,9 @@ class FrameBuilderType(ABC, Generic[R]):
     def get_frame(self, **options) -> Frame:
         ...
 
-    @abstractmethod
-    def set_on_terminated(self, handler: TerminatedHandler):
-        ...
+    # @abstractmethod
+    # def set_on_terminated(self, handler: TerminatedHandler):
+    #     ...
     
     @abstractmethod
     def set_on_exception(self, handler: ExceptionHandler):
