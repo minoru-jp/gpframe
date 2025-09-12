@@ -131,13 +131,14 @@ class _Updater:
             phase_role: PhaseRole,
             environments: dict,
             requests: dict,
-            as_subprocess: bool,
             options: dict,
             share: Callable[[], _FrameSynchronization] | None) -> _FrameSynchronization:
         def validate_accessable_phase():
             def fn():
                 raise TerminatedError
             phase_role.interface.if_terminated(fn)
+
+        as_subprocess = options["as_subprocess"] if "as_subprocess" in options else False
     
         shared_frame_sync = share() if share else None
 
@@ -256,7 +257,7 @@ class _Role(Generic[R]):
     interface: FrameBuilderType[R]
 
 
-def create_builder_role(routine: Routine[R], share: Callable[[], _FrameSynchronization] | None = None) -> _Role[R]:
+def create_builder_role(routine: Routine[R], share: Callable[[], _FrameSynchronization] | None = None, **options) -> _Role[R]:
 
     if not callable(routine):
         raise TypeError("routine must be a callable")
@@ -265,13 +266,28 @@ def create_builder_role(routine: Routine[R], share: Callable[[], _FrameSynchroni
 
     base_state = updater.create_base_state(routine)
 
-    routine_sync: _FrameSynchronization | None = None
+    routine_sync: _FrameSynchronization = updater.create_routine_synchronization(
+        base_state.frame_name,
+        base_state.logger,
+        base_state.routine,
+        base_state.phase_role,
+        base_state.environments,
+        base_state.requests,
+        options,
+        share
+    )
 
-    contexts: _Contexts | None = None
+    contexts: _Contexts = updater.create_contexts(
+        base_state,
+        routine_sync
+    )
 
-    circuit: Circuit | None = None
-
-
+    circuit: Circuit = updater.create_circuit(
+        base_state,
+        updater,
+        routine_sync,
+        contexts
+    )
 
     class _Interface(FrameBuilderType):
         __slots__ = ()
@@ -354,55 +370,21 @@ def create_builder_role(routine: Routine[R], share: Callable[[], _FrameSynchroni
                     return routine_sync
                 return base_state.phase_role.interface.on_load(fn)
             
-            role = create_builder_role(routine, frame_sync_getter)
+            role = create_builder_role(routine, frame_sync_getter, **options)
             return role.interface
         
         def get_frame(self, **options) -> Frame:
-            nonlocal routine_sync, contexts, circuit
-            
-            def fn():
-                nonlocal routine_sync, contexts, circuit
-
-                as_subprocess = options["as_subprocess"] if "as_subprocess" in options else False
-
-                routine_sync = updater.create_routine_synchronization(
-                    base_state.frame_name,
-                    base_state.logger,
-                    base_state.routine,
-                    base_state.phase_role,
-                    base_state.environments,
-                    base_state.requests,
-                    as_subprocess,
-                    options,
-                    share
-                )
-
-                contexts = updater.create_contexts(
-                    base_state,
-                    routine_sync
-                )
-
-                circuit = updater.create_circuit(
-                    base_state,
-                    updater,
-                    routine_sync,
-                    contexts
-                )
-            
-            base_state.phase_role.interface.to_frame_dispatched(fn)
-            if routine_sync is None:
-                raise RuntimeError("BUG: routine_sync is None")
-            
             def start() -> asyncio.Task:
                 def fn():
-                    assert circuit
                     coro = circuit.coroutine
                     task = asyncio.create_task(coro())
                     return task
             
                 return base_state.phase_role.interface.to_started(fn)
-
-            return create_frame_api(base_state, routine_sync, start)
+            
+            def fn():
+                return create_frame_api(base_state, routine_sync, start)
+            return base_state.phase_role.interface.to_frame_dispatched(fn)
             
     interface = _Interface()
     

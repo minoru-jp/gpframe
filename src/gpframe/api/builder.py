@@ -18,9 +18,9 @@ if TYPE_CHECKING:
     from ..impl.handler.terminated import TerminatedHandler
 
 
-def FrameBuilder(routine: Routine[R]) -> FrameBuilderType[R]:
+def FrameBuilder(routine: Routine[R], **options) -> FrameBuilderType[R]:
     from ..impl.builder import create_builder_role
-    role = create_builder_role(routine)
+    role = create_builder_role(routine, **options)
     return role.interface
 
 
