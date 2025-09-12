@@ -303,12 +303,14 @@ def create_builder_role(routine: Routine[R], share: Callable[[], _FrameSynchroni
 
         def set_environments(self, environments: dict):
             def fn():
-                base_state.environments = dict(environments)
+                #base_state.environments = dict(environments)
+                routine_sync.environment_map.update_map_unsafe(environments)
             base_state.phase_role.interface.on_load(fn)
         
         def set_requests(self, requests: dict):
             def fn():
-                base_state.requests = dict(requests)
+                #base_state.environments = dict(environments)
+                routine_sync.request_map.update_map_unsafe(requests)
             base_state.phase_role.interface.on_load(fn)
         
         def set_on_exception(self, handler: ExceptionHandler[R]):

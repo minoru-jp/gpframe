@@ -115,6 +115,10 @@ class MessageRegistry:
         self._updater = self._create_updater()
         self._reader = self._create_reader()
     
+    def update_map_unsafe(self, other: dict):
+        assert self._map
+        self._map = self._map.update(other)
+    
     def geta(self, key: Any, default: Any = _NO_DEFAULT) -> Any:
         self._usage_state_checker()
         with self._lock:
