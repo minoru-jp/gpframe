@@ -117,7 +117,7 @@ class MessageRegistry:
     
     def update_map_unsafe(self, other: dict):
         assert self._map
-        self._map = self._map.update(other)
+        self._map.update(other)
     
     def geta(self, key: Any, default: Any = _NO_DEFAULT) -> Any:
         self._usage_state_checker()
