@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from ..api.frame import Frame
 from ..impl.routine.subprocess import SyncRoutineInSubprocess
@@ -14,7 +14,10 @@ if TYPE_CHECKING:
 def create_frame_api(
         base_state: builder._BaseState,
         routine_sync: builder._FrameSynchronization,
-        frame_task: asyncio.Task) -> Frame:
+        start_fn: Callable[[], asyncio.Task]
+    ) -> Frame:
+
+    task: asyncio.Task | None = None
     
     class _Interface(Frame):
         __slots__ = ()
@@ -46,11 +49,19 @@ def create_frame_api(
                 base_state.logger,
                 **kwargs)
         
+        def start(self) -> asyncio.Task:
+            nonlocal task
+            task = start_fn()
+            return task
+        
         @property
         def task(self) -> asyncio.Task:
-            return frame_task
-            
-    
+            def fn() -> asyncio.Task:
+                if task is None:
+                    raise RuntimeError("BUG: task is None")
+                return task
+            return base_state.phase_role.interface.on_started(fn)
+        
     return _Interface()
 
 

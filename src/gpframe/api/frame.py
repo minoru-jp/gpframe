@@ -42,9 +42,12 @@ class Frame(ABC):
     @abstractmethod
     def request_stop_routine(self, *, kill: bool = False) -> None:
         ...
-        
+
+    @abstractmethod
+    def start(self, **options) -> asyncio.Task:
+        ...
+
     @property
     @abstractmethod
     def task(self) -> asyncio.Task:
         ...
-

@@ -50,6 +50,7 @@ class TerminatedError(Exception):
     """
 
 R = TypeVar("R")
+R2 = TypeVar("R2")
 
 Routine = Callable[[RoutineContext], R] | Callable[[RoutineContext], Awaitable[R]]
 RoutineCaller = Callable[[asyncio.AbstractEventLoop], tuple[Any, Exception | asyncio.CancelledError | None]]
@@ -86,6 +87,7 @@ class _BaseState(Generic[R]):
 
 @dataclass(slots = True)
 class _FrameSynchronization(Generic[R]):
+    is_derived: bool
     routine_execution: RoutineExecution[R]
     environment_map: MessageRegistry
     request_map: MessageRegistry
@@ -129,33 +131,48 @@ class _Updater:
             phase_role: PhaseRole,
             environments: dict,
             requests: dict,
-            as_subprocess: bool) -> _FrameSynchronization:
+            as_subprocess: bool,
+            options: dict,
+            share: Callable[[], _FrameSynchronization] | None) -> _FrameSynchronization:
         def validate_accessable_phase():
             def fn():
                 raise TerminatedError
             phase_role.interface.if_terminated(fn)
     
+        shared_frame_sync = share() if share else None
+
+        shared_routine_exe = shared_frame_sync.routine_execution if shared_frame_sync else None
         if inspect.iscoroutinefunction(routine):
             if as_subprocess:
                 raise TypeError("async function can not be subprocess.")
-            routine_execution = AsyncRoutine(frame_name, logger)
+            routine_execution = AsyncRoutine(frame_name, logger, options, shared_routine_exe)
         else:
             if as_subprocess:
-                routine_execution = SyncRoutineInSubprocess(frame_name, logger)
+                routine_execution = SyncRoutineInSubprocess(frame_name, logger, options, shared_routine_exe)
             else:
-                routine_execution = SyncRoutine(frame_name, logger)
+                routine_execution = SyncRoutine(frame_name, logger, options, shared_routine_exe)
         
-        lock = routine_execution.get_shared_lock()
-        map_factory = routine_execution.get_shared_map_factory()
+        if shared_frame_sync:
+            environment_map = shared_frame_sync.environment_map
+            request_map = shared_frame_sync.request_map
+            event_msg_map = shared_frame_sync.event_msg_map
+            routine_msg_map = shared_frame_sync.routine_msg_map
+            routine_result = RoutineResultSource(
+                shared_frame_sync.routine_execution.get_shared_lock(),
+                validate_accessable_phase
+            )
+        else:
+            lock = routine_execution.get_shared_lock()
+            map_factory = routine_execution.get_shared_map_factory()
 
-        environment_map = MessageRegistry(lock, map_factory(environments), validate_accessable_phase)
-        request_map = MessageRegistry(lock, map_factory(requests), validate_accessable_phase)
-        event_msg_map = MessageRegistry(lock, map_factory(), validate_accessable_phase)
-        routine_msg_map = MessageRegistry(lock, map_factory(), validate_accessable_phase)
-
-        routine_result = RoutineResultSource(lock, validate_accessable_phase)
+            environment_map = MessageRegistry(lock, map_factory(environments), validate_accessable_phase)
+            request_map = MessageRegistry(lock, map_factory(requests), validate_accessable_phase)
+            event_msg_map = MessageRegistry(lock, map_factory(), validate_accessable_phase)
+            routine_msg_map = MessageRegistry(lock, map_factory(), validate_accessable_phase)
+            routine_result = RoutineResultSource(lock, validate_accessable_phase)
 
         return _FrameSynchronization(
+            is_derived = share is not None,
             routine_execution = routine_execution,
             environment_map = environment_map,
             request_map = request_map,
@@ -163,6 +180,7 @@ class _Updater:
             routine_msg_map = routine_msg_map,
             routine_result = routine_result,
         )
+
     
     def create_contexts(self, state: _BaseState, frame_sync: _FrameSynchronization) -> _Contexts:
 
@@ -229,7 +247,7 @@ class _Updater:
         routine_sync.routine_msg_map.clear_map_unsafe()
         routine_sync.routine_result.clear_routine_result_unsafe()
         routine_sync.routine_result.clear_routine_error_unsafe()
-
+    
 
 @dataclass(slots = True)
 class _Role(Generic[R]):
@@ -238,7 +256,7 @@ class _Role(Generic[R]):
     interface: FrameBuilderType[R]
 
 
-def create_builder_role(routine: Routine[R]) -> _Role[R]:
+def create_builder_role(routine: Routine[R], share: Callable[[], _FrameSynchronization] | None = None) -> _Role[R]:
 
     if not callable(routine):
         raise TypeError("routine must be a callable")
@@ -247,11 +265,13 @@ def create_builder_role(routine: Routine[R]) -> _Role[R]:
 
     base_state = updater.create_base_state(routine)
 
-    routine_sync = _FrameSynchronization | None
+    routine_sync: _FrameSynchronization | None = None
 
-    contexts = _Contexts | None
+    contexts: _Contexts | None = None
 
-    circuit: Circuit | None
+    circuit: Circuit | None = None
+
+
 
     class _Interface(FrameBuilderType):
         __slots__ = ()
@@ -325,37 +345,64 @@ def create_builder_role(routine: Routine[R]) -> _Role[R]:
                 base_state.cleanup_timeout = timeout
             base_state.phase_role.interface.on_load(fn)
         
-        def start(self, *, as_subprocess: bool = False) -> Frame:
+    
+        def create_shared_builder(self, routine: Routine[R2]) -> FrameBuilderType[R2]:
+            def frame_sync_getter() -> _FrameSynchronization:
+                def fn():
+                    if routine_sync is None:
+                        raise RuntimeError("BUG: routine_sync is still None")
+                    return routine_sync
+                return base_state.phase_role.interface.on_frame_dispatched(fn)
+            
+            role = create_builder_role(routine, frame_sync_getter)
+            return role.interface
+        
+        def get_frame(self, **options) -> Frame:
             nonlocal routine_sync, contexts, circuit
+            
+            def fn():
+                nonlocal routine_sync, contexts, circuit
 
-            base_state.phase_role.interface.to_started()
+                as_subprocess = options["as_subprocess"] if "as_subprocess" in options else False
 
-            routine_sync = updater.create_routine_synchronization(
-                base_state.frame_name,
-                base_state.logger,
-                base_state.routine,
-                base_state.phase_role,
-                base_state.environments,
-                base_state.requests,
-                as_subprocess,
-            )
+                routine_sync = updater.create_routine_synchronization(
+                    base_state.frame_name,
+                    base_state.logger,
+                    base_state.routine,
+                    base_state.phase_role,
+                    base_state.environments,
+                    base_state.requests,
+                    as_subprocess,
+                    options,
+                    share
+                )
 
-            contexts = updater.create_contexts(
-                base_state,
-                routine_sync
-            )
+                contexts = updater.create_contexts(
+                    base_state,
+                    routine_sync
+                )
 
-            circuit = updater.create_circuit(
-                base_state,
-                updater,
-                routine_sync,
-                contexts
-            )
+                circuit = updater.create_circuit(
+                    base_state,
+                    updater,
+                    routine_sync,
+                    contexts
+                )
+            
+            base_state.phase_role.interface.to_frame_dispatched(fn)
+            if routine_sync is None:
+                raise RuntimeError("BUG: routine_sync is None")
+            
+            def start() -> asyncio.Task:
+                def fn():
+                    assert circuit
+                    coro = circuit.coroutine
+                    task = asyncio.create_task(coro())
+                    return task
+            
+                return base_state.phase_role.interface.to_started(fn)
 
-            coro = circuit.coroutine
-            task = asyncio.create_task(coro())
-            frame = create_frame_api(base_state, routine_sync, task)
-            return frame
+            return create_frame_api(base_state, routine_sync, start)
             
     interface = _Interface()
     

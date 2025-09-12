@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import sys
 
 from logging import Logger
@@ -14,7 +16,7 @@ from ...api.contexts import RoutineContext
 from ..errors import HandledError
 from .result import NO_VALUE
 
-from .base import RoutineExecution
+from .base import RoutineExecution, SyncWaitFn, AsyncWaitFn
 from .errors import ExecutionError, RoutineTimeoutError
 
 
@@ -61,10 +63,12 @@ def _subprocess_entry(routine, context: RoutineContext, result_queue: Queue, log
 
 class SyncRoutineInSubprocess(RoutineExecution):
     __slots__ = ("_lock", "_sync_manager", "_result_queue", "_log_queue", "_listener", "_process", "_called_stop")
-    def __init__(self, frame_name: str, logger: Logger):
+    def __init__(self, frame_name: str, logger: Logger, options: dict, share: RoutineExecution | None = None):
         try:
+            if share and not isinstance(share, SyncRoutineInSubprocess):
+                raise TypeError
             self._sync_manager = Manager()
-            self._lock = self._sync_manager.Lock()
+            self._lock = self._sync_manager.Lock() if not share else share.get_shared_lock()
             self._result_queue = Queue()
             self._log_queue = Queue()
             self._listener = QueueListener(self._log_queue, *logger.handlers)
@@ -126,6 +130,9 @@ class SyncRoutineInSubprocess(RoutineExecution):
                 raise
             else:
                 raise ExecutionError(e) from e
+    
+    def get_wait_routine_result_fn(self) -> SyncWaitFn | AsyncWaitFn:
+        return self.wait_routine_result
     
     def routine_is_running(self) -> bool:
         try:

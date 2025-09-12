@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from typing import TYPE_CHECKING, Any, Coroutine
 
+from ..routine.result import NO_VALUE
 from ..handler.errors import HandledError
-
 from ..outcome import Outcome
+
 
 if TYPE_CHECKING:
     from .. import builder
@@ -59,28 +61,38 @@ class Circuit:
                     if not await asyncio.shield(base_state.exception_handler(ectx, e)):
                         raise
                 
-
+                
+                result = NO_VALUE
+                rexc: Exception | None = None
                 try:
-                    result, e = routine_sync.routine_execution.wait_routine_result(
+                    wait_routine_result = routine_sync.routine_execution.get_wait_routine_result_fn()
+                    tuple_or_coro = wait_routine_result(
                         base_state.frame_name,
                         base_state.logger,
-                        base_state.routine_timeout)
+                        base_state.routine_timeout
+                    )
+                    if inspect.iscoroutine(tuple_or_coro):
+                        result, rexc = await tuple_or_coro
+                    elif isinstance(tuple_or_coro, tuple):
+                        result, rexc = tuple_or_coro
+                    else:
+                        raise RuntimeError
                 except HandledError as e:
                     if not await asyncio.shield(base_state.exception_handler(ectx, e)):
                         raise
                 
 
-                if isinstance(e, asyncio.CancelledError):
-                    if not await asyncio.shield(base_state.exception_handler(ectx, e)):
+                if isinstance(rexc, asyncio.CancelledError):
+                    if not await asyncio.shield(base_state.exception_handler(ectx, rexc)):
                         raise
                     else:
-                        e = None
+                        rexc = None
                 
-                if e:
-                    if not await asyncio.shield(base_state.exception_handler(ectx, e)):
+                if rexc:
+                    if not await asyncio.shield(base_state.exception_handler(ectx, rexc)):
                         raise
                 
-                routine_sync.routine_result.set(result, e)
+                routine_sync.routine_result.set(result, rexc)
                 
                 try:
                     await base_state.event_handlers["on_end"](ectx)
@@ -115,7 +127,8 @@ class Circuit:
             def atomic_with_terminating():
                 nonlocal outcome
                 outcome = updater.create_outcome_source(routine_sync).interface
-                updater.cleanup_maps(routine_sync)
+                if not routine_sync.is_derived:
+                    updater.cleanup_maps(routine_sync)
                 routine_sync.routine_execution.cleanup(
                     base_state.frame_name,
                     base_state.logger,

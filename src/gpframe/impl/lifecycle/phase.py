@@ -19,6 +19,14 @@ class PhaseManager(ABC):
         ...
 
     @abstractmethod
+    def to_frame_dispatched(self, fn: Callable[[], R] = NOOP) -> R:
+        ...
+    
+    @abstractmethod
+    def on_frame_dispatched(self, fn: Callable[[], R] = NOOP) -> R:
+        ...
+
+    @abstractmethod
     def to_started(self, fn: Callable[[], R] = NOOP) -> R:
         ...
 
@@ -39,6 +47,7 @@ class PhaseManager(ABC):
 
 class Phase(IntEnum):
     LOAD = 0
+    FRAME_DISPATCHED = auto()
     STARTED = auto()
     TERMINATED = auto()
 
@@ -106,13 +115,18 @@ def create_phase_manager_role():
     class _Interface(PhaseManager):
         def on_load(self, fn: Callable[[], R] = NOOP) -> R:
             return core.maintain(state, Phase.LOAD, fn)
+        
+        def to_frame_dispatched(self, fn: Callable[[], R] = NOOP) -> R:
+            return core.transit_state_with(state, Phase.FRAME_DISPATCHED, fn)
+
+        def on_frame_dispatched(self, fn: Callable[[], R] = NOOP) -> R:
+            return core.maintain(state, Phase.FRAME_DISPATCHED, fn)
 
         def to_started(self, fn: Callable[[], R] = NOOP) -> R:
             return core.transit_state_with(state, Phase.STARTED, fn)
 
         def on_started(self, fn: Callable[[], R] = NOOP) -> R:
             return core.maintain(state, Phase.STARTED, fn)
-
 
         def to_terminated(self, fn: Callable[[], R] = NOOP) -> R:
             return core.transit_state_with(state, Phase.TERMINATED, fn)

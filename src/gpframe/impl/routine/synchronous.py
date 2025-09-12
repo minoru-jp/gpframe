@@ -1,3 +1,4 @@
+from __future__ import annotations
 
 from logging import Logger
 from threading import Lock
@@ -8,16 +9,24 @@ from ...api.contexts import RoutineContext
 from ..errors import HandledError
 from .result import NO_VALUE
 
-from .base import RoutineExecution
+from .base import RoutineExecution, SyncWaitFn, AsyncWaitFn
 from .errors import ExecutionError
 
 
 class SyncRoutine(RoutineExecution):
     __slots__ = ("_lock", "_routine", "_context")
-    def __init__(self, frame_name: str, logger: Logger):
-        self._lock = Lock()
-        self._routine = None
-        self._context = None
+    def __init__(self, frame_name: str, logger: Logger, options: dict, share: RoutineExecution | None = None):
+        try:
+            if share and not isinstance(share, SyncRoutine):
+                raise TypeError
+            self._lock = Lock()
+            self._routine = None
+            self._context = None
+        except Exception as e:
+            if isinstance(e, (HandledError, AssertionError)):
+                raise
+            else:
+                raise ExecutionError(e) from e
     
     def get_shared_lock(self) -> Lock:
         try:
@@ -60,6 +69,9 @@ class SyncRoutine(RoutineExecution):
                 raise
             else:
                 raise ExecutionError(e) from e
+    
+    def get_wait_routine_result_fn(self) -> SyncWaitFn | AsyncWaitFn:
+        return self.wait_routine_result
     
     def routine_is_running(self) -> bool:
         try:

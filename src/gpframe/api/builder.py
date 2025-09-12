@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Generic, TypeVar
 
 R = TypeVar("R")
-
+R2 = TypeVar("R2")
 
 if TYPE_CHECKING:
     import logging
@@ -51,7 +51,7 @@ class FrameBuilderType(ABC, Generic[R]):
         ...
 
     @abstractmethod
-    def start(self, *, as_subprocess: bool = False) -> Frame:
+    def get_frame(self, **options) -> Frame:
         ...
 
     @abstractmethod
@@ -85,3 +85,8 @@ class FrameBuilderType(ABC, Generic[R]):
     @abstractmethod
     def set_on_close(self, handler: EventHandler[R]) -> None:
         ...
+    
+    @abstractmethod
+    def create_shared_builder(self, routine: Routine[R2]) -> FrameBuilderType[R]:
+        ...
+    

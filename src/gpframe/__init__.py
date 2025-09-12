@@ -269,7 +269,7 @@ from .impl.routine.result import NO_VALUE
 
 from .impl.builder import TerminatedError
 
-from .impl.routine.asynchronous import FutureTimeoutError, ThreadCleanupTimeoutError
+from .impl.routine.asynchronous import TaskTimeoutError, ThreadCleanupTimeoutError
 from .impl.routine.subprocess import SubprocessTimeoutError
 
 from .impl.handler.exception import Throw
@@ -280,6 +280,6 @@ __all__ = ("FrameBuilder", "FrameBuilderType",
            "Outcome",
            "NO_VALUE",
            "TerminatedError", 
-           "FutureTimeoutError", "ThreadCleanupTimeoutError",
+           "TaskTimeoutError", "ThreadCleanupTimeoutError",
            "SubprocessTimeoutError",
            "Throw")
