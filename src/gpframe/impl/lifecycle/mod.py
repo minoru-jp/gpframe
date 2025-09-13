@@ -136,8 +136,7 @@ class Circuit:
             # base_state.phase_role.interface.to_terminated(atomic_with_terminating)
             # outcome: Outcome | None = None
             def atomic_with_terminating():
-                if not routine_sync.is_derived:
-                    updater.cleanup_maps(routine_sync)
+                updater.cleanup_maps(routine_sync)
                 routine_sync.routine_execution.cleanup(
                     base_state.frame_name,
                     base_state.logger,

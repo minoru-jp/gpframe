@@ -1,31 +1,27 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import logging
+from typing import TYPE_CHECKING, TypeVar
 
-from ...api.contexts import RoutineContext, OuterContext
+from ...api.contexts import OuterContext
 
 if TYPE_CHECKING:
-    from ..message import MessageUpdater, MessageReader
+    from ..message import  MessageReader
 
-def create_routine_context(
+def create_outer_context(
         frame_name: str,
-        logger_name: str,
         routine_in_subprocess: bool,
         environment_reader: MessageReader,
         request_reader: MessageReader,
         event_msg_reader: MessageReader,
-        routine_msg_updater: MessageUpdater,
-        outer_context: OuterContext | None,
-) -> RoutineContext:
+        routine_msg_reader: MessageReader,
+) -> OuterContext:
     
-    class _Interface(RoutineContext):
+    class _Interface(OuterContext):
         __slots__ = ()
         @property
         def frame_name(self) -> str:
             return frame_name
-        @property
-        def logger_name(self) -> str:
-            return logger_name
         @property
         def routine_in_subprocess(self) -> bool:
             return routine_in_subprocess
@@ -39,29 +35,22 @@ def create_routine_context(
         def event_message(self) -> MessageReader:
             return event_msg_reader
         @property
-        def routine_message(self) -> MessageUpdater:
-            return routine_msg_updater
-        @property
-        def outer(self) -> OuterContext:
-            if not outer_context:
-                raise RuntimeError
-            return outer_context
+        def routine_message(self) -> MessageReader:
+            return routine_msg_reader
+        
         def __reduce__(self):
             return (
-                create_routine_context,
+                create_outer_context,
                     (frame_name,
-                    logger_name,
                     routine_in_subprocess,
                     environment_reader,
                     request_reader,
                     event_msg_reader,
-                    routine_msg_updater
+                    routine_msg_reader
                 )
             )
         
     interface = _Interface()
     
     return interface
-
-
 

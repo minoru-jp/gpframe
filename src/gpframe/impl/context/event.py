@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, TypeVar
 
-from ...api.contexts import EventContext
+from ...api.contexts import EventContext, OuterContext
 
 if TYPE_CHECKING:
     from .. import builder
@@ -15,7 +15,7 @@ R = TypeVar("R")
 
 def create_event_context(
         base_state: builder._BaseState,
-        frame_sync: builder._FrameSynchronization[R]
+        frame_sync: builder._FrameSynchronization[R],
 ) -> EventContext[R]:
     
     class _Interface(EventContext):
@@ -44,6 +44,11 @@ def create_event_context(
         @property
         def routine_result(self) -> RoutineResult[R]:
             return frame_sync.routine_result.interface
+        @property
+        def outer(self) -> OuterContext:
+            if not frame_sync.outer_context:
+                raise RuntimeError
+            return frame_sync.outer_context
         
     interface = _Interface()
     

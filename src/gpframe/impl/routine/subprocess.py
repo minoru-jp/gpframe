@@ -63,12 +63,10 @@ def _subprocess_entry(routine, context: RoutineContext, result_queue: Queue, log
 
 class SyncRoutineInSubprocess(RoutineExecution):
     __slots__ = ("_lock", "_sync_manager", "_result_queue", "_log_queue", "_listener", "_process", "_called_stop")
-    def __init__(self, frame_name: str, logger: Logger, options: dict, share: RoutineExecution | None = None):
+    def __init__(self, frame_name: str, logger: Logger, options: dict):
         try:
-            if share and not isinstance(share, SyncRoutineInSubprocess):
-                raise TypeError
             self._sync_manager = Manager()
-            self._lock = self._sync_manager.Lock() if not share else share.get_shared_lock()
+            self._lock = self._sync_manager.Lock()
             self._result_queue = Queue()
             self._log_queue = Queue()
             self._listener = QueueListener(self._log_queue, *logger.handlers)

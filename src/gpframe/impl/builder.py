@@ -29,6 +29,7 @@ from .message import MessageRegistry, MessageReader, MessageUpdater
 from .frame import Frame, create_frame_api
 from .context.event import EventContext, create_event_context
 from .context.routine import RoutineContext, create_routine_context
+from .context.outer import OuterContext, create_outer_context
 
 from .routine.result import RoutineResultSource
 
@@ -87,13 +88,13 @@ class _BaseState(Generic[R]):
 
 @dataclass(slots = True)
 class _FrameSynchronization(Generic[R]):
-    is_derived: bool
     routine_execution: RoutineExecution[R]
     environment_map: MessageRegistry
     request_map: MessageRegistry
     event_msg_map: MessageRegistry
     routine_msg_map: MessageRegistry
     routine_result: RoutineResultSource
+    outer_context: OuterContext | None
 
 @dataclass(slots = True)
 class _Contexts:
@@ -103,9 +104,9 @@ class _Contexts:
 
 class _Updater:
     __slots__ = ()
-    def create_base_state(self, routine: Routine[R]) -> _BaseState[R]:
+    def create_base_state(self, routine: Routine[R], name: str) -> _BaseState[R]:
         return _BaseState(
-            frame_name = "noname",
+            frame_name = name,
             logger = logging.getLogger("gpframe"),
             routine = routine,
             phase_role = create_phase_manager_role(),
@@ -132,7 +133,7 @@ class _Updater:
             environments: dict,
             requests: dict,
             options: dict,
-            share: Callable[[], _FrameSynchronization] | None) -> _FrameSynchronization:
+            outer: Callable[[], tuple[str, _FrameSynchronization]] | None) -> _FrameSynchronization:
         def validate_accessable_phase():
             def fn():
                 raise TerminatedError
@@ -140,46 +141,50 @@ class _Updater:
 
         as_subprocess = options["as_subprocess"] if "as_subprocess" in options else False
     
-        shared_frame_sync = share() if share else None
+        outer_frame_name, outer_frame_sync = outer() if outer else (None, None)
 
-        shared_routine_exe = shared_frame_sync.routine_execution if shared_frame_sync else None
+        # outer_routine_exe = outer_frame_sync.routine_execution if outer_frame_sync else None
         if inspect.iscoroutinefunction(routine):
             if as_subprocess:
                 raise TypeError("async function can not be subprocess.")
-            routine_execution = AsyncRoutine(frame_name, logger, options, shared_routine_exe)
+            routine_execution = AsyncRoutine(frame_name, logger, options)
         else:
             if as_subprocess:
-                routine_execution = SyncRoutineInSubprocess(frame_name, logger, options, shared_routine_exe)
+                routine_execution = SyncRoutineInSubprocess(frame_name, logger, options)
             else:
-                routine_execution = SyncRoutine(frame_name, logger, options, shared_routine_exe)
+                routine_execution = SyncRoutine(frame_name, logger, options)
         
-        if shared_frame_sync:
-            environment_map = shared_frame_sync.environment_map
-            request_map = shared_frame_sync.request_map
-            event_msg_map = shared_frame_sync.event_msg_map
-            routine_msg_map = shared_frame_sync.routine_msg_map
-            routine_result = RoutineResultSource(
-                shared_frame_sync.routine_execution.get_shared_lock(),
-                validate_accessable_phase
+        if outer_frame_sync:
+            if outer_frame_name is None:
+                raise RuntimeError("BUG: outer_frame_name is None")
+            outer_context = create_outer_context(
+                outer_frame_name,
+                as_subprocess,
+                outer_frame_sync.environment_map.reader,
+                outer_frame_sync.request_map.reader,
+                outer_frame_sync.event_msg_map.reader,
+                outer_frame_sync.routine_msg_map.reader,
             )
         else:
-            lock = routine_execution.get_shared_lock()
-            map_factory = routine_execution.get_shared_map_factory()
+            outer_context = None
+        
+        lock = routine_execution.get_shared_lock()
+        map_factory = routine_execution.get_shared_map_factory()
 
-            environment_map = MessageRegistry(lock, map_factory(environments), validate_accessable_phase)
-            request_map = MessageRegistry(lock, map_factory(requests), validate_accessable_phase)
-            event_msg_map = MessageRegistry(lock, map_factory(), validate_accessable_phase)
-            routine_msg_map = MessageRegistry(lock, map_factory(), validate_accessable_phase)
-            routine_result = RoutineResultSource(lock, validate_accessable_phase)
+        outer_environment_map = MessageRegistry(lock, map_factory(environments), validate_accessable_phase)
+        request_map = MessageRegistry(lock, map_factory(requests), validate_accessable_phase)
+        event_msg_map = MessageRegistry(lock, map_factory(), validate_accessable_phase)
+        routine_msg_map = MessageRegistry(lock, map_factory(), validate_accessable_phase)
+        routine_result = RoutineResultSource(lock, validate_accessable_phase)
 
         return _FrameSynchronization(
-            is_derived = share is not None,
             routine_execution = routine_execution,
-            environment_map = environment_map,
+            environment_map = outer_environment_map,
             request_map = request_map,
             event_msg_map = event_msg_map,
             routine_msg_map = routine_msg_map,
             routine_result = routine_result,
+            outer_context = outer_context,
         )
 
     
@@ -207,7 +212,8 @@ class _Updater:
             env_reader,
             req_reader,
             emsg_reader,
-            rmsg_updater)
+            rmsg_updater,
+            frame_sync.outer_context)
         
         return _Contexts(
             ectx = ectx,
@@ -257,14 +263,19 @@ class _Role(Generic[R]):
     interface: FrameBuilderType[R]
 
 
-def create_builder_role(routine: Routine[R], share: Callable[[], _FrameSynchronization] | None = None, **options) -> _Role[R]:
+def create_builder_role(
+        routine: Routine[R],
+        name: str = "frame",
+        outer: Callable[[], tuple[str, _FrameSynchronization]] | None = None,
+        **options
+    ) -> _Role[R]:
 
     if not callable(routine):
         raise TypeError("routine must be a callable")
 
     updater = _Updater()
 
-    base_state = updater.create_base_state(routine)
+    base_state = updater.create_base_state(routine, name)
 
     routine_sync: _FrameSynchronization = updater.create_routine_synchronization(
         base_state.frame_name,
@@ -274,7 +285,7 @@ def create_builder_role(routine: Routine[R], share: Callable[[], _FrameSynchroni
         base_state.environments,
         base_state.requests,
         options,
-        share
+        outer
     )
 
     contexts: _Contexts = updater.create_contexts(
@@ -291,11 +302,6 @@ def create_builder_role(routine: Routine[R], share: Callable[[], _FrameSynchroni
 
     class _Interface(FrameBuilderType):
         __slots__ = ()
-        def set_name(self, name: str) -> None:
-            def fn():
-                base_state.frame_name = name
-            base_state.phase_role.interface.on_load(fn)
-    
         def set_logger(self, logger: logging.Logger):
             def fn():
                 base_state.logger = logger
@@ -362,15 +368,15 @@ def create_builder_role(routine: Routine[R], share: Callable[[], _FrameSynchroni
             base_state.phase_role.interface.on_load(fn)
         
     
-        def create_shared_builder(self, routine: Routine[R2]) -> FrameBuilderType[R2]:
-            def frame_sync_getter() -> _FrameSynchronization:
+        def create_inner_frame_builder(self, routine: Routine[R2], name: str = "inner-frame") -> FrameBuilderType[R2]:
+            def outer_frame_info_getter() -> tuple[str, _FrameSynchronization]:
                 def fn():
                     if routine_sync is None:
                         raise RuntimeError("BUG: routine_sync is still None")
-                    return routine_sync
+                    return base_state.frame_name, routine_sync
                 return base_state.phase_role.interface.on_load(fn)
             
-            role = create_builder_role(routine, frame_sync_getter, **options)
+            role = create_builder_role(routine, name = name, outer = outer_frame_info_getter, **options)
             return role.interface
         
         def get_frame(self, **options) -> Frame:

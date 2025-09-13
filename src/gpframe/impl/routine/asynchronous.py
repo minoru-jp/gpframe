@@ -59,11 +59,9 @@ def _worker(loop: asyncio.AbstractEventLoop):
 
 class AsyncRoutine(RoutineExecution):
     __slots__ = ("_lock", "_loop", "_task", "_called_stop")
-    def __init__(self, frame_name: str, logger: Logger, options: dict, share: RoutineExecution | None = None):
+    def __init__(self, frame_name: str, logger: Logger, options: dict):
         try:
-            if share and not isinstance(share, AsyncRoutine):
-                raise TypeError
-            self._lock = Lock() if not share else share.get_shared_lock()
+            self._lock = Lock()
             loop = options["loop"] if "loop" in options else asyncio.get_running_loop()
             if not isinstance(loop, asyncio.AbstractEventLoop):
                 raise TypeError
@@ -85,7 +83,6 @@ class AsyncRoutine(RoutineExecution):
                 raise
             else:
                 raise ExecutionError(e) from e
-        
     
     def get_shared_map_factory(self) -> type[dict]:
         return dict

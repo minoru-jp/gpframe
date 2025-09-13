@@ -15,10 +15,8 @@ from .errors import ExecutionError
 
 class SyncRoutine(RoutineExecution):
     __slots__ = ("_lock", "_routine", "_context")
-    def __init__(self, frame_name: str, logger: Logger, options: dict, share: RoutineExecution | None = None):
+    def __init__(self, frame_name: str, logger: Logger, options: dict):
         try:
-            if share and not isinstance(share, SyncRoutine):
-                raise TypeError
             self._lock = Lock()
             self._routine = None
             self._context = None

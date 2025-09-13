@@ -18,18 +18,14 @@ if TYPE_CHECKING:
     # from ..impl.handler.terminated import TerminatedHandler
 
 
-def FrameBuilder(routine: Routine[R], **options) -> FrameBuilderType[R]:
+def FrameBuilder(routine: Routine[R], name: str = "frame", **options) -> FrameBuilderType[R]:
     from ..impl.builder import create_builder_role
-    role = create_builder_role(routine, **options)
+    role = create_builder_role(routine, name = name, **options)
     return role.interface
 
 
 class FrameBuilderType(ABC, Generic[R]):
     __slots__ = ()
-    @abstractmethod
-    def set_name(self, name: str) -> None:
-        ...
-    
     @abstractmethod
     def set_logger(self, logger: logging.Logger):
         ...
@@ -87,6 +83,6 @@ class FrameBuilderType(ABC, Generic[R]):
         ...
     
     @abstractmethod
-    def create_shared_builder(self, routine: Routine[R2]) -> FrameBuilderType[R]:
+    def create_inner_frame_builder(self, routine: Routine[R2]) -> FrameBuilderType[R]:
         ...
     
