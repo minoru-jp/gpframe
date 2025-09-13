@@ -83,6 +83,6 @@ class FrameBuilderType(ABC, Generic[R]):
         ...
     
     @abstractmethod
-    def create_inner_frame_builder(self, routine: Routine[R2]) -> FrameBuilderType[R]:
+    def create_inner_frame_builder(self, routine: Routine[R2], name: str = "inner-frame") -> FrameBuilderType[R]:
         ...
     
