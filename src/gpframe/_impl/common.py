@@ -1,11 +1,11 @@
 
 from enum import Enum
-from typing import TypeVar
+from typing import Hashable, TypeVar
 
 
 _T = TypeVar("_T")
 _D = TypeVar("_D")
-_K = TypeVar("_K", contravariant = True)
+_K = TypeVar("_K", contravariant = True, bound = Hashable)
 
 class _NO_DEFAULT(Enum):
     _ = "dummy member"

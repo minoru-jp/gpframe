@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Iterator
 
 import logging
 
@@ -10,9 +10,9 @@ from multiprocessing.managers import SyncManager
 
 from contextlib import contextmanager
 
-from gpframe.contracts.protocols import gproot, frame, routine
+from gpframe.contracts.protocols import RootFrameFuture, gproot, frame, routine
 
-from gpframe._impl.frame.future import run_circuit_in_thread, wrap_to_interface
+from gpframe._impl.frame.future import RootFrameExecutorImpl, run_circuit_in_thread, wrap_to_interface
 
 from gpframe._impl.routine.subprocess import IPCRoutineExecution
 from gpframe._impl.routine.subprocess import SyncRoutineInSubprocess
@@ -114,16 +114,19 @@ def create_ipc_root_frame_role(frame_name: str, routine: routine.ipc.Root, *, lo
             state.routine_execution.request_stop_routine(kill)
         
         @contextmanager
-        def start(self):
-            def fn():
-                frame_future = run_circuit_in_thread(
+        def start(self) -> Iterator[RootFrameFuture]:
+            def fn() -> RootFrameFuture:
+                frame_executor = RootFrameExecutorImpl(
+                    frame_name = frame_base_state.frame_name
+                )
+                frame_executor.run_circuit_in_thread(
                     frame_base_state,
                     state.event_context,
                     state.routine_context,
                     state.routine_execution,
                     routine,
                 )
-                return wrap_to_interface(frame_future)
+                return frame_executor.interface
             try:
                 yield frame_base_state.phase_role.interface.to_started(fn)
             finally:

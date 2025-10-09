@@ -3,7 +3,7 @@ import threading
 from typing import Any, Callable, Generic, cast
 
 
-from gpframe.contracts.protocols import (
+from gpframe._impl.common import (
     _K, _T, _D,
     _noop,
     _any_str,
@@ -86,6 +86,8 @@ class MessageRegistry(Generic[_K]):
                     raise KeyError
             if isinstance(value, typ):
                 applied_value = fn(value)
+                if isinstance(applied_value, typ):
+                    raise TypeError
                 self._map[key] = applied_value
                 return applied_value
             else:

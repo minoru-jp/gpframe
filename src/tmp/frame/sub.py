@@ -7,9 +7,9 @@ import logging
 
 from typing import Callable
 
-from gpframe.contracts.protocols import FrameFuture, gpsub, frame, handler, routine
+from gpframe.contracts.protocols import gpsub, frame, handler, routine
 
-from gpframe._impl.frame.future import FrameFutureImpl, run_circuit_in_thread
+from gpframe._impl.frame.future import RootFrameExecutorImpl, SubFrameExecutorImpl
 
 from gpframe._impl.message.message import MessageRegistry
 from gpframe._impl.message.reflector import MessageReflector
@@ -85,7 +85,7 @@ class _SubFrameRole:
     frame_base_role: _FrameBaseRole
     state: _SubFrameState
     interface_type: type[frame.SubFrame]
-    start_fn: Callable[[], FrameFuture]
+    start_fn: Callable[[RootFrameExecutorImpl], SubFrameExecutorImpl]
 
 def create_sub_frame_role(
         frame_name: str,
@@ -110,16 +110,20 @@ def create_sub_frame_role(
         ipc_message
     )
 
-    def start() -> FrameFutureImpl:
-        def fn():
-            frame_future = run_circuit_in_thread(
+    def start(root_executor: RootFrameExecutorImpl) -> SubFrameExecutorImpl:
+        def fn() -> SubFrameExecutorImpl:
+            frame_executor = SubFrameExecutorImpl(
+                frame_name = frame_base_state.frame_name,
+                root = root_executor,
+            )
+            frame_executor.run_circuit_in_thread(
                 frame_base_state,
                 state.event_context,
                 state.routine_context,
                 state.routine_execution,
                 routine,
             )
-            return frame_future
+            return frame_executor
         return frame_base_state.phase_role.interface.to_started(fn)
 
     class _Interface(frame.SubFrame, frame_base_role.interface_type):

@@ -5,10 +5,10 @@ from dataclasses import dataclass
 import inspect
 import logging
 
-from typing import Callable
+from typing import Callable, Iterator
 from contextlib import contextmanager
 
-from gpframe.contracts.protocols import gproot, frame, routine
+from gpframe.contracts.protocols import RootFrameFuture, SubFrameFuture, gproot, frame, routine
 
 from gpframe.exceptions import FrameAlreadyStartedError
 
@@ -31,7 +31,7 @@ from gpframe._impl.frame.sub_ipc import _IPCSubFrameRole, create_ipc_sub_frame_r
 
 from gpframe._impl.context import create_root_event_context, create_root_routine_context
 
-from gpframe._impl.frame.future import FrameFutureImpl, run_circuit_in_thread, wrap_to_interface
+from gpframe._impl.frame.future import FrameFutureImpl, RootFrameExecutorImpl, SubFrameExecutorImpl, run_circuit_in_thread, wrap_to_interface
 
 @dataclass(slots = True)
 class _RootFrameState:
@@ -41,10 +41,6 @@ class _RootFrameState:
     routine_context: gproot.routine.Context
 
     routine_execution: IntraProcessRoutineExecution
-
-    sub_frames: dict[str, tuple[frame.SubFrame, _SubFrameRole | _IPCSubFrameRole]]
-
-    started_frame_futures: list[FrameFutureImpl]
 
 @dataclass(slots = True)
 class _RootFrameRole:
@@ -63,21 +59,18 @@ class _RootFrameUpdater:
             root_frame_base_state: _RootFrameBaseState
         ) -> _RootFrameState:
         
-        sub_frames = {}
-        started_frame_futures: list[FrameFutureImpl] = []
+        sub_frames: dict[str, tuple[SubFrameExecutorImpl, _SubFrameRole]] = {}
 
-        def start_sub_frame(frame_name: str) -> FrameFutureImpl:
+        def start_sub_frame(frame_name: str) -> SubFrameFuture:
             # Sub-frames are started via ctx.start_sub_frame, so they cannot be started
             # before the main frame itself has been started.
-            def fn():
+            def fn() -> SubFrameFuture:
+                #スタート済みだから、root_frame_executorは存在する。
+                assert root_frame_executor is not None
                 sub_frame_role = sub_frames[frame_name][1]
-                if any(frame_name == fut.frame_name for fut in started_frame_futures):
-                    raise FrameAlreadyStartedError(
-                        f"The sub frame named '{frame_name}' is already started."
-                    )
-                frame_future = sub_frame_role.start_fn()
-                started_frame_futures.append(frame_future)
-                return frame_future
+                sub_frame_executor = sub_frame_role.start_fn()
+                #サブフレームがスタートしているかどうか？
+                return sub_frame_executor.interface
             return frame_base_state.phase_role.interface.on_started(fn)
         
         event_context = create_root_event_context(
@@ -130,6 +123,8 @@ def create_root_frame_role(frame_name: str, routine: routine.Root, *, logger: lo
 
     state = updater.create_state(logger, routine, frame_base_state, root_base_state)
 
+    root_frame_executor: RootFrameExecutorImpl | None = None
+
     class _Interface(frame.RootFrame, root_frame_base_role.interface_type):
 
         def create_sub_frame(self, frame_name: str, routine: routine.Sub) -> frame.SubFrame:
@@ -169,22 +164,20 @@ def create_root_frame_role(frame_name: str, routine: routine.Root, *, logger: lo
             state.routine_execution.request_stop_routine()
         
         @contextmanager
-        def start(self):
-            def wait_targets_getter():
-                def fn():
-                    return tuple(state.started_frame_futures)
-                return frame_base_state.phase_role.interface.on_terminated(fn)
-            
-            def fn():
-                frame_future = run_circuit_in_thread(
+        def start(self) -> Iterator[RootFrameFuture]:
+            def fn() -> RootFrameFuture:
+                nonlocal root_frame_executor
+                root_frame_executor = RootFrameExecutorImpl(
+                    frame_name = frame_base_state.frame_name
+                )
+                root_frame_executor.run_circuit_in_thread(
                     frame_base_state,
                     state.event_context,
                     state.routine_context,
                     state.routine_execution,
                     routine,
-                    wait_targets_getter
                 )
-                return wrap_to_interface(frame_future)
+                return root_frame_executor.interface
             try:
                 yield frame_base_state.phase_role.interface.to_started(fn)
             finally:

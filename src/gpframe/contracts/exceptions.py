@@ -61,28 +61,33 @@ class RoutineResultTypeError(TypeError):
 class RoutineResultMissingError(Exception):
     pass
 
-class FrameFutureAggregateError(Exception):
-    def __init__(self, errors: dict[str, BaseException]):
-        if not errors:
-            raise ValueError(
-                "FrameFutureAggregateError must not be "
-                "created with an empty errors dict."
-            )
-        self.errors = errors
-        first_item = next(iter(errors.items()))
-        first_name, first_exc = first_item
-        super().__init__(
-            f"Multiple frame futures raised exceptions. "
-            f"First error from '{first_name}': {first_exc!r}. "
-            f"See .errors for the complete list."
+class FrameAggregateError(Exception):
+    def __init__(
+        self,
+        root_name: str,
+        root_error: BaseException | None,
+        sub_errors: dict[str, BaseException],
+    ):
+        self.root_frame_name = root_name
+        self.root_frame_error = root_error
+        self.sub_frame_errors = sub_errors
+
+        # Build message
+        parts: list[str] = []
+        if root_error is not None:
+            # Root error always comes first
+            parts.append(f"{root_name}: {type(root_error).__name__}")
+        # Then add subframe errors
+        for name, exc in sub_errors.items():
+            parts.append(f"{name}: {type(exc).__name__}")
+
+        msg = (
+            f"The root frame '{root_name}' has terminated with errors.\n"
+            f"The following frames raised errors:\n  "
+            + ", ".join(parts)
         )
-    
-    def __str__(self) -> str:
-        base_msg = super().__str__()
-        if self.errors:
-            frames = ", ".join(self.errors.keys())
-            return f"{base_msg} (frames with errors: {frames})"
-        return base_msg
+
+        super().__init__(msg)
 
 class FrameAlreadyStartedError(Exception):
     pass
