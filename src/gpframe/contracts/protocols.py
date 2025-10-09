@@ -60,6 +60,49 @@ RoutineおよびHandlerは同期/非同期のどちらの関数にも対応し�
 この制約はAPIに定義されているプロトコルから判別ができないので注意。
 
 =======================================================================================
+フレームの正常終了と例外終了の非対称性
+=======================================================================================
+
+フレームは結果を持たないため、正常終了したフレームに対する操作は限定的になっている。
+gather()は主にログ出力とリソース解放（clear_ended_frame）のために使用する。
+
+対照的に、例外は厳密な制御を要求する、drain()、reraise()、raise_if_faulted()など、
+状態管理を伴うAPIを提供する。
+
+=======================================================================================
+セッションの役割と制御構造
+=======================================================================================
+
+セッションは動作中のフレームに対してリクエストを送ったり、終了に伴う例外処理などを行う。
+
+大きく分けて二つの制御構造を提供する。
+
+1. 一括待機
+    ```
+    with frame.start() as session:
+        session.wait_done()
+    ```
+
+2. ポーリングによる監視
+    ```
+    with frame.start() as session:
+        while session.running(): # .running()は待機しない
+            # 終了したフレームの処理
+            if completed := session.gather():
+                for name in completed:
+                    session.logger.info(f"{name} completed")
+            
+            # 例外が発生したフレームの処理
+            try:
+                session.reraise()
+            except UncheckedError as e:
+                handle_error(e)
+                e.check()  # チェック済みに移行
+            
+            ... # time.sleep(...)などの適切なインターバル
+    ```
+
+=======================================================================================
 フレームの例外のハンドリング
 =======================================================================================
 
@@ -148,6 +191,7 @@ RoutineおよびHandlerは同期/非同期のどちらの関数にも対応し�
 """
 from __future__ import annotations
 
+from enum import Enum
 import logging
 
 from typing import Protocol, Any, Awaitable, Callable, Union, ContextManager, cast
@@ -264,7 +308,7 @@ class _HasFrameCoordinating(Protocol):
         """
         ...
 
-    def abandon_unchecked_error(self, log: bool = True) -> None:
+    def abandon_unchecked_errors(self, log: bool = True) -> None:
         """未チェック状態の例外に対する警告を抑制する  
         このメソッドはフレームの一部が予定通りに終了せず、それらのフレームのハンドリングを放棄して、
         自身を終了させる直前に使用することが想定されている。  
@@ -287,27 +331,33 @@ class _HasHandlerSetting(Protocol):
     def set_on_close(self, handler: EventHandler) -> None:
         ...
 
+KeyType = Union[str, Enum]
+
 class MessageReader(Protocol):
-    def get_any(self, key: str, default: Any = _NO_DEFAULT) -> Any:
+    """メッセージ読み取り用インターフェース  
+    メッセージはIPCで接続されている場合がある。  
+    この時IPCの接続に問題があり、読み取りが失敗した場合IPCConnectionError
+    """
+    def get_any(self, key: KeyType, default: Any = _NO_DEFAULT) -> Any:
         """キーに対応する値を取得する。
         defaultが設定されていない状態でkeyに対応する値が無ければKeyError
         """
         ...
-    def get_or(self, key: str, typ: type[_T], default: _D) -> _T | _D:
+    def get_or(self, key: KeyType, typ: type[_T], default: _D) -> _T | _D:
         """キーに対応する値をデフォルト値を伴って取得する。  
         keyに対応する値がある場合、typによる型チェックを行った後値を返す。  
         型チェックが通らない場合、TypeErrorを送出。  
         対応する値が存在せず、default値を返す場合、型チェックは行われない。
         """
         ...
-    def get(self, key: str, typ: type[_T]) -> _T:
+    def get(self, key: KeyType, typ: type[_T]) -> _T:
         """キーに対応する値を取得する
         キーに対応する値がない場合、KeyErrorを送出。値がtyp型と互換性が無ければTypeError
         """
         ...
     def string(
         self,
-        key: str,
+        key: KeyType,
         default: Any = _NO_DEFAULT,
         *,
         prep: Callable[[str], str] | tuple[Callable[[str], str], ...] = _noop,
@@ -322,7 +372,7 @@ class MessageReader(Protocol):
         ...
     def string_to_int(
         self,
-        key: str,
+        key: KeyType,
         default: int | Any = _NO_DEFAULT,
         *,
         prep: Callable[[str], str] | tuple[Callable[[str], str], ...] = _noop,
@@ -337,7 +387,7 @@ class MessageReader(Protocol):
         ...
     def string_to_float(
         self,
-        key: str,
+        key: KeyType,
         default: float | Any = _NO_DEFAULT,
         *,
         prep: Callable[[str], str] | tuple[Callable[[str], str], ...] = _noop,
@@ -352,7 +402,7 @@ class MessageReader(Protocol):
         ...
     def string_to_bool(
         self,
-        key: str,
+        key: KeyType,
         default: bool | Any = _NO_DEFAULT,
         *,
         prep: Callable[[str], str] | tuple[Callable[[str], str], ...] = _noop,
@@ -371,7 +421,13 @@ class MessageReader(Protocol):
 
 
 class MessageUpdater(MessageReader, Protocol):
-    def update(self, key: str, value: _T) -> _T:
+    """メッセージ更新用インターフェース  
+    メッセージの値がピッケル化可能に制限されている場合がある(IPC使用時)。  
+    MessageUpdaterはこの制限に対して静的な型チェックを提供しない。  
+    値の更新時にピッケル化に関してエラーが起こった場合IPCValueError  
+    IPCの接続に問題があり、更新できなかった場合IPCConnectionError
+    """
+    def update(self, key: KeyType, value: _T) -> _T:
         """キーに対して値を設定する
         更新後の値を返す。
         更新前の値と更新しようとしている値に型互換性が無ければTypeError
@@ -379,7 +435,7 @@ class MessageUpdater(MessageReader, Protocol):
         """
         ...
     
-    def swap(self, key: str, value: _T, default: _T | type[_NO_DEFAULT] = _NO_DEFAULT) -> _T:
+    def swap(self, key: KeyType, value: _T, default: _T | type[_NO_DEFAULT] = _NO_DEFAULT) -> _T:
         """キーに対して値を設定する
         更新前の値を返す。
         キーに対する値が存在せず、defaultも設定されていない場合KeyError
@@ -390,7 +446,7 @@ class MessageUpdater(MessageReader, Protocol):
         """
         ...
 
-    def apply(self, key: str, typ: type[_T], fn: Callable[[_T], _T], default: _T | type[_NO_DEFAULT] = _NO_DEFAULT) -> _T:
+    def apply(self, key: KeyType, typ: type[_T], fn: Callable[[_T], _T], default: _T | type[_NO_DEFAULT] = _NO_DEFAULT) -> _T:
         """キーに対応する値の読み取りと更新を同時に行う
         更新後の値を返す。
         keyに対応する値が存在せず、defaultが設定されていない場合KeyError。
@@ -400,7 +456,7 @@ class MessageUpdater(MessageReader, Protocol):
         fnがtypと型に互換性がない値を返した場合TypeError。
         """
         ...
-    def remove(self, key: str, default: Any = None) -> Any:
+    def remove(self, key: KeyType, default: Any = None) -> Any:
         """キーに対応した値を削除し、返す
         キーに対応する値が存在しない場合でも例外を送出せず、default値を返す。
         """
@@ -461,7 +517,7 @@ class Context(_HasFrameIdentity, _HasLogging, Protocol):
         """複数のサブフレームをスタートし、コーディネーターを返す
         サブフレームはself.create_subframe()またはself.create_ipc_subframe()で
         作成されたサブフレームでなければならない。他のContextによって作成された
-        サブフレームを指定した場合TypeError
+        サブフレームを指定した場合CrossContextError
         subframesが空ならValueError
         """
         ...
@@ -485,7 +541,7 @@ RedoHandler = Union[
 ]
 
 
-class FrameSessionBase(_HasSessionIdentity, _HasLogger, _HasLogging, _HasFrameCoordinating, Protocol):
+class SessionBase(_HasSessionIdentity, _HasLogger, _HasLogging, _HasFrameCoordinating, Protocol):
     @property
     def environment(self) -> MessageReader:
         """環境変数  
@@ -505,7 +561,7 @@ class FrameSessionBase(_HasSessionIdentity, _HasLogger, _HasLogging, _HasFrameCo
         """
         ...
     
-class RootFrameSession(FrameSessionBase, Protocol):
+class RootFrameSession(SessionBase, Protocol):
     def _for_root(self) -> None:
         """プロトコル分類用ダミーメソッド"""
         ...
