@@ -73,7 +73,7 @@ gather()は主にログ出力とリソース解放（clear_ended_frame）のた�
 セッションの役割と制御構造
 =======================================================================================
 
-セッションは動作中のフレームに対してリクエストを送ったり、終了に伴う例外処理などを行う。
+セッションは動作中のフレームの待機、リクエストの送信、終了に伴う例外処理などを行う。
 
 大きく分けて二つの制御構造を提供する。
 
@@ -100,6 +100,25 @@ gather()は主にログ出力とリソース解放（clear_ended_frame）のた�
                 e.check()  # チェック済みに移行
             
             time.sleep(1)
+    ```
+
+1と2の組み合わせ。
+    ```
+    # 特定のフレーム(target)のみハンドリングしてあとは一括待機
+    wiht frame.start() as session:
+        while session.running():
+            if completed := session.gather():
+                if target in completed:
+                    break
+            try:
+                session.reraise()
+            except UncheckedError as e:
+                if target == e.frame_name:
+                    e.check()
+                    break
+            time.sleep(1)
+
+        session.wait_done()
     ```
 
 =======================================================================================
@@ -130,7 +149,7 @@ gather()は主にログ出力とリソース解放（clear_ended_frame）のた�
                 session.logger.info("end with timeout")
                 # さらに待つこともできるが限度がある。
                 # 例外のハンドリングを諦めるのはフレームの終了待機を諦めるのと同義。
-                session.abandon_unchecked_error()
+                session.abandon_unchecked_errors()
             else:
                 # 時間内に終了したのかと思いきや、実はタイムアウトしていて、P1からP2まで
                 # の間に、最後のフレームが終了した可能性がある。それらのフレームが例外を
@@ -249,20 +268,21 @@ class _HasFrameCoordinating(Protocol):
     def clear_ended_frame(
             self, frame_name: str, *, suppress: bool = False, log: bool = False
     ) -> None:
-        """終了済みサブフレームを削除する
-        フレームが終了していない場合FrameStillRunningError。
-        frame_nameが指すフレームが存在しない場合KeyError。
-        フレームが未チェック状態の例外を持っていた場合、警告が発生する。
-        suppressがTrueの場合、未チェック状態の例外に対する警告は抑制される。
-        suppressの値に関わらずlogがTrueなら未チェック状態の例外はログされる。
-        .abandon_unchecked_error()の呼び出しの有無には影響されない。
+        """終了済みサブフレームを削除する  
+        フレームが終了していない場合FrameStillRunningError。  
+        frame_nameが指すフレームが存在しない場合KeyError。  
+        フレームが未チェック状態の例外を持っていた場合、警告が発生する。  
+        suppressがTrueの場合、未チェック状態の例外に対する警告は抑制される。  
+        suppressの値に関わらずlogがTrueなら未チェック状態の例外はログされる。  
+        .abandon_unchecked_errors()の呼び出しの有無には影響されない。  
         """
         ...
     
-    def gather(self) -> list[str] | None:
-        """終了したフレーム名を取得する
-        呼び出した時点で例外を伴わずに終了しているフレーム名のリストを返す。
-        一度返したフレーム名を二度と返さない。
+    def gather(self) -> list[str]:
+        """終了したフレーム名を取得する  
+        呼び出した時点で例外を伴わずに終了しているフレーム名のリストを返す。  
+        例外を伴わず終了したフレームが存在しない場合、空のリストを返す。  
+        一度返したフレーム名を二度と返さない。  
         .clear_ended_frame()で消去されたフレーム名は含まれない。
         """
         ...
@@ -296,15 +316,15 @@ class _HasFrameCoordinating(Protocol):
     def raise_if_faulted(self):
         """未チェック状態の例外がある場合CollectedErrorでラップしてスローする"""
     
-    def drain(self) -> dict[str, BaseException] | None:
+    def drain(self) -> dict[str, BaseException]:
         """未チェック状態の例外をチェック状態にして取得する
-        未チェック例外が存在しない場合、Noneを返す。
+        未チェック例外が存在しない場合、空のdictを返す。
         """
         ...
     
-    def peek_drain(self) -> dict[str, BaseException] | None:
+    def peek_drain(self) -> dict[str, BaseException]:
         """未チェック状態の例外をチェック状態にせず取得する
-        未チェック例外が存在しない場合、Noneを返す。
+        未チェック例外が存在しない場合、空のdictを返す。
         """
         ...
 
