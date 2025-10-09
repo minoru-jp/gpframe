@@ -1,5 +1,17 @@
 # gpframe
 
+
+## Status
+
+🧩 **Currently implementing the core API of gpframe**
+
+Work in progress on [`gpframe/src/gpframe/contracts/protocols.py`](gpframe/src/gpframe/contracts/protocols.py).
+
+This file defines the fundamental protocols and interfaces described in the API specification,
+covering frame lifecycle, message handling, and concurrent/parallel execution behavior.
+
+
+
 A general-purpose framework for managing routine execution with concurrency, event handling, and lifecycle control.
 
 Note: This project is in an early stage. It currently provides implementation only, with no tests yet.
