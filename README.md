@@ -5,7 +5,7 @@
 
 🧩 **Currently implementing the core API of gpframe**
 
-Work in progress on [`src/gpframe/contracts/protocols.py`](src/gpframe/contracts/api.py).
+Work in progress on [`src/gpframe/contracts/api.py`](src/gpframe/contracts/api.py).
 
 This file defines the fundamental protocols and interfaces described in the API specification,
 covering frame lifecycle, message handling, and concurrent/parallel execution behavior.
