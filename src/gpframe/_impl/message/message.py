@@ -11,7 +11,7 @@ from gpframe._impl.common import (
     _any_float,
     _NO_DEFAULT,
 )
-from gpframe.contracts.protocols import message
+from gpframe.contracts.api import message
 
 from gpframe._impl.protocols import _DictLike
 

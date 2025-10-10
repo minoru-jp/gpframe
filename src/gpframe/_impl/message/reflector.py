@@ -1,12 +1,12 @@
 
 from typing import Any, Callable
 
-from gpframe.contracts.protocols import message
+from gpframe.contracts.api import message
 MessageReader = message.MessageReader
 MessageUpdater = message.MessageUpdater
 
 from gpframe._impl.message.message import MessageRegistry
-from gpframe.contracts.protocols import _NO_DEFAULT, _D, _T, _any_float, _any_int, _any_str, _noop
+from gpframe.contracts.api import _NO_DEFAULT, _D, _T, _any_float, _any_int, _any_str, _noop
 
 class MessageReflector:
     __slots__ = ("_reader", "_updater")

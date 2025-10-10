@@ -8,7 +8,7 @@ import logging
 from typing import Callable, Iterator
 from contextlib import contextmanager
 
-from gpframe.contracts.protocols import RootFrameFuture, SubFrameFuture, gproot, frame, routine
+from gpframe.contracts.api import RootFrameFuture, SubFrameFuture, gproot, frame, routine
 
 from gpframe.exceptions import FrameAlreadyStartedError
 

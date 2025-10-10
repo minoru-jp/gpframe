@@ -1,3 +1,3 @@
-from gpframe.contracts.protocols import gproot as _gproot
+from gpframe.contracts.api import gproot as _gproot
 
 Context = _gproot.ipc.routine.Context

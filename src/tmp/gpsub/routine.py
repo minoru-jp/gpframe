@@ -1,3 +1,3 @@
-from gpframe.contracts.protocols import gpsub as _gpsub
+from gpframe.contracts.api import gpsub as _gpsub
 
 Context = _gpsub.routine.Context

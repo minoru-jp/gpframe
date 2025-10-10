@@ -8,7 +8,7 @@ import logging
 from multiprocessing.managers import SyncManager
 
 
-from gpframe.contracts.protocols import gpsub, frame, handler, routine
+from gpframe.contracts.api import gpsub, frame, handler, routine
 
 from gpframe._impl.frame.future import RootFrameExecutorImpl, SubFrameExecutorImpl
 

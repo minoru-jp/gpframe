@@ -4,7 +4,7 @@ from enum import Enum
 import threading
 from typing import Any, Callable
 
-from gpframe.contracts.protocols import routine, _T, _D, _NO_DEFAULT
+from gpframe.contracts.api import routine, _T, _D, _NO_DEFAULT
 
 from gpframe.exceptions import RoutineResultTypeError, RoutineResultMissingError
 

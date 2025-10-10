@@ -10,7 +10,7 @@ import threading
 import multiprocessing
 from multiprocessing.managers import SyncManager
 
-from gpframe.contracts.protocols import handler, _RootFrameBase
+from gpframe.contracts.api import handler, _RootFrameBase
 
 from gpframe._impl.message.message import MessageRegistry
 from gpframe._impl.message.reflector import MessageReflector

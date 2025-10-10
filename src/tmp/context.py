@@ -3,7 +3,7 @@ from __future__ import annotations
 from logging import Logger
 from typing import Any, Callable
 
-from gpframe.contracts.protocols import SubFrameFuture, gproot, gpsub, message, routine
+from gpframe.contracts.api import SubFrameFuture, gproot, gpsub, message, routine
 
 MessageReader = message.MessageReader
 MessageUpdater = message.MessageUpdater

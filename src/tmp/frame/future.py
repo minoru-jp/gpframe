@@ -5,7 +5,7 @@ import asyncio
 from dataclasses import dataclass, field
 import threading
 
-from gpframe.contracts.protocols import RootFrameFuture, SubFrameFuture
+from gpframe.contracts.api import RootFrameFuture, SubFrameFuture
 from gpframe.contracts.exceptions import FrameAggregateError
 from gpframe._impl.frame.circuit import circuit
 

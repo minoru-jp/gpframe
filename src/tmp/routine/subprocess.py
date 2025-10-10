@@ -13,7 +13,7 @@ from queue import Empty
 
 from logging.handlers import QueueListener
 
-from gpframe.contracts.protocols import gproot, gpsub
+from gpframe.contracts.api import gproot, gpsub
 from gpframe.contracts.exceptions import RoutineSubprocessTimeoutError
 
 from gpframe._impl.routine.base import (

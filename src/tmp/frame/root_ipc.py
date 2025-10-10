@@ -10,7 +10,7 @@ from multiprocessing.managers import SyncManager
 
 from contextlib import contextmanager
 
-from gpframe.contracts.protocols import RootFrameFuture, gproot, frame, routine
+from gpframe.contracts.api import RootFrameFuture, gproot, frame, routine
 
 from gpframe._impl.frame.future import RootFrameExecutorImpl, run_circuit_in_thread, wrap_to_interface
 

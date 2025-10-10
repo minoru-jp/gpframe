@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import threading
 from typing import Callable
 
-from gpframe.contracts.protocols import _FrameBase
+from gpframe.contracts.api import _FrameBase
 
 from gpframe.exceptions import FrameTerminatedError
 
