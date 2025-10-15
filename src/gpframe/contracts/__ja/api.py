@@ -7,50 +7,8 @@ gpframe: 並行・並列処理のための統合制御フレームワーク
 このフレームワークは並行処理、並列処理における実行形態の構築のサポート、シームレスな実行形態
 の移行、同期的な通信手段の提供、および例外処理のサポートを行う。
 
----------------------------------------------------------------------------------------
-[目次]
----------------------------------------------------------------------------------------
-  DOC 1. Overview and Usage
-    1.1 ユースケース
-    1.2 概念
-    1.3 インポートと最小構成
-    1.4 並行処理・並列処理
-    1.5 特筆するべき制約事項
-  DOC 2. Frame
-    2.1 フレームハンドリングの特徴
-    2.2 例外のハンドリング
-    2.3 並行処理用フレーム
-  DOC 3. Message
-    3.1 メッセージの仕様
-    3.2 メッセージチャンネル
-  DOC 4. Session
-    4.1 制御構造
+[ユースケース]
 
-  -------------------------------------------------------------------------------------
-  API A. Conceptual and Foundational Dependencies
-       A.0 Conceptual Dependencies
-       A.1 Foundational Protocols
-  API B. Explicitly Importable Interfaces
-       B.1 Entry Points
-       B.2 Execution Context API
-       B.3 Exception Hierarchy
-  API C. Auto-Completion Definitions
-       C.1 User-Defined Implementation Type Aliases
-       C.2 Frame Protocols
-       C.3 Message Protocols
-       C.4 Session Protocols
----------------------------------------------------------------------------------------
-
-=======================================================================================
-[DOC 1] Overview and Usage
-=======================================================================================
-
-
----------------------------------------------------------------------------------------
-[DOC 1.1] ユースケース
----------------------------------------------------------------------------------------
-
-想定するユースケース
     - 複数のアプリケーションコンポーネントの連結と制御
 
         +-----------------------------+
@@ -69,153 +27,209 @@ gpframe: 並行・並列処理のための統合制御フレームワーク
 
     - 同期的な処理が必要なシステムの基礎
 
----------------------------------------------------------------------------------------
-[DOC 1.2] 概念
----------------------------------------------------------------------------------------
+[ドキュメントについて]
+このドキュメントはこのフレームワークが提供する並行・並列処理の制御の仕組みや、ユースケース別の
+サンプルコードなどを記述している。
+各インターフェースの詳細についてはドキュメント後のコード部分(API定義)を参照すること。
 
-Frame: このフレームワークの処理単位。Routine の実行とそのライフサイクルを管理する。
-Routine: 処理の本体。ユーザーの実装。
-Context: ユーザーの実装にフレームのメタ情報、メッセージチャンネルを提供する実行環境。
-Message: フレーム間または、フレーム外部からのフレームへの通信用インターフェース。
-Session: フレーム群を制御し、共有メッセージを定義・監視する制御層。
-Handler: イベントに対応するフックポイントの処理。ユーザーの実装。
-    
-RoutineおよびHandlerは同期/非同期のどちらの関数にも対応している。
+[主要な概念とプロトコルの概要]
+    概念:
+              frame: Routineを軸とした個別の実行単位。
+        frame error: Routine,Handlerの例外の発生、または内包するSesisionの未完了。
+                     この2つを以てframe errorとする。
+       broken frame: frame error が起こったframe
+ incomplete session: サブフレームにbroken frameがある場合や、すべてのサブフレームが停止
+                     していない場合。Sessionの処理中に例外が発生した場合。
 
----------------------------------------------------------------------------------------
-[DOC 1.3] インポートと最小構成
----------------------------------------------------------------------------------------
-
-ユーザーが明示的にインポートする必要がある実体はcreate_frame(エントリポイント)とContext
-
-最小構成
-    from gpframe import create_frame, Context
-
-    def routine(ctx: Context):
-        ctx.logger.info("hellow gpframe!")
+    プロトコル:
+            Routine: 処理の本体。ユーザーの実装。
+            Handler: イベントに対応するフックポイントの処理。ユーザーの実装。
+        FrameBulder: Frameのビルダー。ハンドラの設定を行う（対応している場合）
         
-    root = create_frame(routine)
+            Context: ユーザーの実装にフレームのメタ情報、メッセージチャンネルを提供する
+                     実行環境。
+            Message: フレーム間または、フレーム外部からのフレームへの状態共有インターフェース。
 
-    with root.start() as session:
-        session.wait_done_and_raise()
-
-
-エントリポイントは他にcreate_concurret_frameとcreate_parallel_frameがある。
-並行処理と並列処理を固定して生成する場合に使用する。
-
-このAPIに定義されているそのほかのプロトコルはIDEによる補完用にあるものでユーザーは直接
-インポートまたは生成する必要はない。
-
----------------------------------------------------------------------------------------
-[DOC 1.4] 並行処理・並列処理
----------------------------------------------------------------------------------------
-
-エントリポイントであるcreate_frameのsubprocessフラグにより並列か並行かを選択する。
-この二つは根本的な分類であり、それ以降のフレームの定義が異なる。
-
-並行ルートフレーム:
-    - 各フレーム内部でライフサイクルが管理され、フックポイントにイベントハンドラを適用できる。
-    - サブフレームをサブプロセスで動作することはできない。
-    - メッセージは非IPCによる通信。
-
-並列ルートフレーム：
-    - 各フレームはルーティンのみをサブプロセスで実行し、ライフサイクルおよびイベントハンドラは  
-      存在せず、設定することができない。
-    - サブフレームもすべて独立したサブプロセスで動作する。
-    - local以外のメッセージはすべてIPCによる通信。
-
-    
-並列フレームにはハンドラが設定できないが、以下のようにしてコードを変更することなく並行時のみ
-ハンドラを設定することができる。
-ただし、並行処理であっても明示的にハンドラを拒絶することもできる。
-
-    root = create_frame(routine, subprocess = True, handler = False)
-    
-    if root.supports_handlers():
-        con.set_on_open(...)
-        ...
+        FrameResult: Frameの実行結果。内部で起こった例外や制御の完全性の記録。
+            Session: フレーム群の同期とframe errorのハンドリングを行い、
+                     共有メッセージを定義・監視する制御層。
         
-これはHandlerがなくてもRoutineが動くように設計されている場合のみ採用できる、あくまでも
-選択的なやり方であり、並行並列を切り替える必要がない場合はcreate_concurrent_frame()または
-create_parallel_frame()を明示して使う。
+        _Agent: Routineを新しいスレッドまたはプロセスで実行するためのアジャスター。
+        
+        - _AgentはAPIに直接出現しないが、フレームワークの構造の説明のために記載されている。
+        - RoutineおよびHandlerは同期/非同期のどちらの関数にも対応している。
 
+[目次]
 ---------------------------------------------------------------------------------------
-[DOC 1.5] 注意
+    DOC 1. 同期と制御の仕組み
+        1.1 FrameResultとマーク
+        1.2 制御とその責務
+        1.3 俯瞰図
+        1.4 スレッド実行時（並行処理時）のライフサイクル
+    DOC 2. スレッド/プロセスセーフな状態共有メカニズム
+        2.1 Messageの仕様
+        2.2 Message チャンネル
+    DOC 3. サンプルコード
+        3.1 Session
+            3.1.1 broken frameのポーリングによるチェック(疑似コード)
+            3.1.2 broken frameの一括チェック(疑似コード)
+  -------------------------------------------------------------------------------------
+    API A. Conceptual and Foundational Dependencies
+        A.0 Conceptual Dependencies
+        A.1 Foundational Protocols
+    API B. Explicitly Importable Interfaces
+        B.1 Entry Points
+        B.2 Execution Context API
+        B.3 Exception Hierarchy
+    API C. Auto-Completion Definitions
+        C.1 User-Defined Implementation Type Aliases
+        C.2 Builder Protocols
+        C.3 Message Protocols
+        C.4 Session Protocols
+        C.5 Result Protocols
 ---------------------------------------------------------------------------------------
-次にあげる点はこのフレームワークを使用する際に留意しておくこと。
-  - IPC通信では値のピッケル化が必須
-  - フレームの再起動はできない
-  - 並列フレームではハンドラが設定できない
 
 =======================================================================================
-[DOC 2] Frame
+[DOC 1] 同期と制御の仕組み
 =======================================================================================
 
-フレーム全体はLOAD->ACTIVE->TERMINATEDと状態を変化して戻ることはない。
-つまり、再起動(start()の二重呼び出し)はできない。
+この章ではこのフレームワークがどのように制御を行うかの概要を説明する。制御とはフレームの
+`実行方法`とその`待機`さらに`例外処理`といった根本的な部分を指し、状態共有に関しては、
+[DOC 2] スレッド/プロセスセーフな状態共有メカニズム、に記述する。
 
 ---------------------------------------------------------------------------------------
-[DOC 2.1] フレームのハンドリングの特徴
+[DOC 1.1] FrameResultとマーク
 ---------------------------------------------------------------------------------------
 
-フレームは結果を持たないため、正常終了したフレームに対する操作は限定的になっている。
-gather()は主にログ出力とリソース解放（clear_ended_frame）のために使用する。
+FrameResultはframeが終了した時、その状態を記録する。この項ではbroken frameについて説明する。
 
-対照的に、例外は厳密な制御を要求する、drain()、reraise()、raise_if_faulted()など、
-状態管理を伴うAPIを提供する。
+broken frameの場合、そのフレームが最終的に送出した例外、incomplete sessionのどちらか、または
+両方が記録されている。
 
----------------------------------------------------------------------------------------
-[DOC 2.2] 例外のハンドリング
----------------------------------------------------------------------------------------
+Sessionはこのbroken frameのFrameResultに対して、インターフェースを通して「マーク」を
+行うことで、そのハンドリングを行う。
 
-このフレームワークは例外を内部的に未チェック状態とチェック済み状態に分類する。
-未チェック状態の例外を残したままwithブロックを抜けた場合、警告を発生する。
+マークの種類とその後の挙動:
+       unexpected: 想定外のエラーに対するマーク。RootSession終了後に例外が発生する。
+          ignored: 想定され、かつ上位レイヤーの整合性が保たれる(継続可能)な場合のマーク。
+                   RootSession終了時には何も起こらない
+          no mark: マークがない場合、RootSession終了後に警告が発生する。
 
-フレームが送出した例外はまず未チェック状態になる。
-
-次の動作を行うことにより未チェック状態からチェック済み状態へ移行する
-    - session.reraise(unwrap = True)の形で再スローを行った場合。
-    - session.reraise()の形でスローを行った場合に、捕捉したUncheckedErrorの
-      .check()を呼びだした場合。
-    - session.drain()から取得された場合。
-
-タイムアウトを伴うフレームの待機と例外のハンドリング:
-    with frame.start() as session:
-        ...
-        try:
-            session.wait_done_and_raise(10) # P1
-        except FrameError as e:
-            ... # エラー処理
-        finally:
-            if session.running(): # P2
-                # タイムアウトしている
-                session.logger.info("end with timeout")
-                # さらに待つこともできるが限度がある。
-                # 例外のハンドリングを諦めるのはフレームの終了待機を諦めるのと同義。
-                session.abandon_unchecked_errors()
-            else:
-                # 時間内に終了したのかと思いきや、実はタイムアウトしていて、P1からP2まで
-                # の間に、最後のフレームが終了した可能性がある。それらのフレームが例外を
-                # 投げているかもしれないので、残っている未チェック状態の例外を処理しながら
-                # セッションを終了する
-                session.raise_if_faulted()
+ignoredはそのbroken frameを明示的に無視することができる。これは部分的、全体的に fail-silent 
+な設計が可能であることを示す。
 
 ---------------------------------------------------------------------------------------
-[DOC 2.3] 並行処理用フレーム
+[DOC 1.2] 制御とその責務
 ---------------------------------------------------------------------------------------
 
-並行処理用フレームの実行方式
-+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-各フレーム（ルート／サブ）は独立したスレッド上で実行される。
+概念上の実行単位はframeだが、実際にその制御はSessionを通して行う。
+Sessionは一つ、または複数のframeを制御する。
 
-  [メインスレッド]
-       │
-       ├─▶ [フレームスレッド]
-       │       └─ サーキット（非同期関数）
-       │              ├─ 各ハンドラの実行
-       │              └─ ルーティンの実行
+次の事柄が起こった場合、それらは未チェックのincomplete sessionとして記録される。
 
-+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+incomplete sessionになる原因:
+    1. 管理下frameのいずれかがSessionの終了時に停止していない。
+    2. 管理下frameから発生したすべての例外が解消されていない。
+    3. Sessionがその処理中に例外を送出した。
+
+Sessionの責務に関する重要な指摘:
+    incomplete sessionができてしまうこと自体は問題ではない。また、incomplete sessionが
+    発生しなかったからといって、バグがないということではない。すべては、Routineと
+    Handlerの実装に依存する。
+    たとえばincomplete sessionを発生させないために無理な例外の握りつぶしや、フレームに対する
+    不必要な待ち合わせ時間の延長などを行うべきではない。
+    incomplete sessionはそれが起こったことを上位レイヤーへ、また最終的には開発者に通知、
+    ハンドリングの機会を提供するためのものであってSessionの実装にincomplete sessionの
+    発生を厳格に防ぐことは`Sessionの責務ではない`。
+    Sessionの実装は、想定され回復可能なbroken frameのみを解決し、それ以外のものは
+    未解決のまま制御を終了するべきである。また、待ち合わせに関しても想定された時間内に停止しない
+    場合には制御を終了して、「制御は終わったが、構成フレームが動作したまま」という事実を素直に
+    上位レイヤーに伝えるべきである。また、Sessionの実装に不足している部分があり、
+    incomplete sessionになった場合も最終的に警告として開発者が認識できる。
+
+    incomplete sessionは問題が起こっている範囲を限定するための概念であり、問題自体を解決する
+    ための概念ではない。
+
+---------------------------------------------------------------------------------------
+[DOC 1.3] 俯瞰図
+---------------------------------------------------------------------------------------
+
+RootSessionかSubSessionには次の違いがある。
+    RootSession:
+        - 常に一つの実行単位のみを制御する
+    SubSession:
+        - SubSessionは複数の実行単位を制御する可能性がある。
+          (複数のサブフレームの割り当てが可能)
+
+    - Sessionの終了は実行単位の`制御`の終了になる。
+
+注意:
+    実行単位は開始した後、その停止は保証されない。
+    (例えばRoutine内でデッドロックが発生している場合は終了しない)
+    Sessionの終了はその実行単位の`制御`を終了するのであって、実行単位の終了を意味しない。
+    つまり、Sessionが終了した後も実行単位は動作を続けている可能性がある。
+
+
+実行単位は終了するとFrameResultとして内部にストアされ(*1)、上位レイヤーは
+session.get_frame_result()を使用してそれを取得する。
+
+*1: すべてのFrameResultはRootFrameと同プロセス、同スレッドにストアされ管理される。
+*2: Handlerはスレッドでの実行時のみ設定できる
+
+                ┌─ gpframe ───────────────────────────────────────────┐
+                │                                                     │
+                │   RootFrame ──────────▶ _Agent ────┐                │
+     broken     │       │                            │                │
+  FrameResult  end      ▼                            │                │
+     found   ◀──┼── RootSession ◀──┐                 │                │
+       │        │       ▲          │                 │                │
+       │        │       │       session.             │                │
+       ▼        │       │── get_frame_result()       │                │
+   Exception    │       │                            │                │
+      if        │       │                            │                │
+    marked      │   :internal                        ▼                │
+      as        │   FrameResult Map         ----------------------    │
+  unexpected    │       ExceptionRecord     thread or process(:EXE)   │
+--------------  │       CoordinationError   -----------------------   │
+   Warnning     │       ▲                            │                │
+      if        │       │                         (worker)            │
+    without     │       │                            │                │
+     mark       │       │                            ▼                │
+                │       │◀──────┐   ┌─────── Routine / Handler(*2)    │
+                │       │       │   │                                 │
+                │       │       │   │ create                          │
+                │       │   end │   │                                 │
+                │       │       │   │                                 │
+                │       │       │   ▼      ┌──────────────────────┐   │
+                │       │     SubFrame(1) ─┼────▶ _Agent          │   │
+                │       │  ┌───────┼───────┘        │             │   │
+                │       │  │       ▼                ▼             │   │
+                │       │  │   SubSession  --------------------   │   │
+                │       │  │       ▲       │       EXE        │   │   │
+                │       │  │       │       --------------------   │   │
+                │       │  │    session.         (worker)         │   │
+                │       │──├── get_frame_           ▼             │   │
+                │       │  │    _result()   Routine / Handler(*2) │   │
+                │       │  │                        │             │   │
+                │       │  │                        │ create      │   │
+                │       │◀─├─────────────┐          │             │   │
+                │       │  │        end  │          ▼             │   │
+                │       │  │       ┌────────────────────────────┐ │   │ # TODO: 別プロセスまたは別スレッドにSubFrame(1-1)があるように見えるので要修正
+                │       │  │       │ SubFrame (1-1) ...         │ │   │
+                │       │  │       │  SubSession ...            │ │   │
+                │       .  │       └────────────────────────────┘ │   │
+                │       .  └──────────────────────────────────────┘   │
+                │       .                                             │
+                └─────────────────────────────────────────────────────┘
+
+---------------------------------------------------------------------------------------
+[DOC 1.4] スレッド実行時（並行処理時）のライフサイクル
+---------------------------------------------------------------------------------------
+
+並行処理時にはRoutineの前後に各種ハンドラを設定できる。
+これらは全てオプショナルであって、必須のものは存在しない。必要な時に必要なものを設定すること。
+
+ライフサイクルは以下の通り。
 
 フレーム内部のライフサイクルの定義
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -224,7 +238,7 @@ gather()は主にログ出力とリソース解放（clear_ended_frame）のた�
     ↓
   on_start *
     ↓
-  routine（メイン処理）
+  Routine
     ↓
   on_end
     ↓
@@ -233,9 +247,7 @@ gather()は主にログ出力とリソース解放（clear_ended_frame）のた�
       └─ False を返す → on_close
     ↓
   on_close（shielded：例外・キャンセルの影響を受けず必ず呼ばれる）
-  
 ---------------------------------------------------------------------------------------
-
 【例外発生時の流れ】
   ...
     ↓
@@ -246,35 +258,44 @@ gather()は主にログ出力とリソース解放（clear_ended_frame）のた�
   on_close（shielded）
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-shieled = asyncio.shield()による呼び出し
+shielded = asyncio.shield()による呼び出し
+
 
 =======================================================================================
-[DOC 3] Message
+[DOC 2] スレッド/プロセスセーフな状態共有メカニズム
 =======================================================================================
+
+この章ではSessionまたはContextを介して提供されるSession<->Frame間、Frame<->Frame間の
+状態共有を行うための仕組みを説明する。
+状態共有はMessageというプロトコルに沿って行われ、それぞれ役割持つ複数のチャンネルを
+使い分けて行う。
+
+基本的にスレッド、サブプロセスで共通のインターフェースを提供するが、サブプロセスでの実行の
+際にはIPCを用いる為、メッセージの値はlocalチャンネル以外、ピクル化可能でなければならない。
+なお、この制約を静的型チェックから判別する方法をMessageプロトコル群は提供していない点に注意。
 
 ---------------------------------------------------------------------------------------
-[DOC 3.1] メッセージの仕様
+[DOC 2.1] Messageの仕様
 ---------------------------------------------------------------------------------------
 メッセージはキーと値からなり、次の仕様に従う。
 - キーおよび値にNoneを設定することはできない。
 - キーは一度作成されると「定義済み」となり、型情報と共に値が削除されても存在し続ける。
 - 一度定義済みのキーを再度定義することはできない。
 - 値はキーの定義と同時に有効なものを型情報と共に設定する必要がある。
-- 値はインターフェースを介して削除することができ。これを「消費済み」と表現する。
+- 値はインターフェースを介して削除することができ、これを「消費済み」と表現する。
 
 ---------------------------------------------------------------------------------------
-[DOC 3.2] メッセージチャンネル
+[DOC 2.2] Message チャンネル
 ---------------------------------------------------------------------------------------
-
-役割別にメッセージチャンネル4つが存在する。
-    - enviroment:
+役割別に4つのメッセージチャンネルが存在する。
+    - environment:
         不変メッセージチャンネル。RootFrameのスタート前に設定され、更新手段が提供されない。
         各セクションは読み取りのみを行う。
         Session, Frame(via Context) -> MessageReader
     - request:
         Sessionを通して、各フレームへ要求を伝えるためのメッセージチャンネル。
-        メッセージはSessionで定義と更新を行い、各フレームは読み取りのみを行う。
-        Session -> MessageManager
+        メッセージはRootSessionで定義と更新を行い、各フレームは読み取りのみを行う。
+        RootSession -> MessageManager
         Frame(via Context) -> MessageReader
     - common:
         フレーム間で共有されるメッセージチャンネル。
@@ -291,61 +312,59 @@ shieled = asyncio.shield()による呼び出し
         intra-Frame(via Context) -> MessageManager
 
 注意:
-    並列処理の場合、localを除くMessageの値はすべてIPCを用いるのでピッケル化に対応している
+    並列処理の場合、localを除くMessageの値はすべてIPCを用いるのでピクル化に対応している
     必要がある。この制約はAPIに定義されているプロトコルから判別ができないので注意。
 
 
-
 =======================================================================================
-[DOC 4] Session
+[DOC 3] サンプルコード
 =======================================================================================
-
-セッションは動作中のフレームの待機、リクエストの送信、終了に伴う例外処理などを行う。
 
 ---------------------------------------------------------------------------------------
-[DOC 4.1] 制御構造
+[DOC 3.1] Session
 ---------------------------------------------------------------------------------------
 
-大きく分けて二つの制御構造を提供する。
+----------[DOC 3.1.1] broken frameのポーリングによるエラーチェック(疑似コード)-------------
 
-1. 一括待機
-    with frame.start() as session:
-        session.wait_done()
+with root.start() OR ctx.start_subframes() as session:
+    while session.running():
+        if broken_frame := session.get_broken_frame():
+            if incomp_session := broken_frame.get_incomplete_session():
+                ...
+                if error := incomp_session.get_error():
+                    broken_frame.mark_as_unexpected()
+            if error := broken_frame.error():
+                ...
+                if ...:
+                    broken_frame.mark_as_unexpected()
 
-2. 個別フレームの監視
-    # ポーリングの例
-    with frame.start() as session:
-        while session.running(): # .running()は待機しない
-            # 終了したフレームの処理
-            if completed := session.gather():
-                for name in completed:
-                    session.logger.info(f"{name} completed")
-            
-            # 例外が発生したフレームの処理
-            try:
-                session.reraise()
-            except UncheckedError as e:
-                handle_error(e)
-                e.check()  # チェック済みに移行
-            
-            time.sleep(1)
+            if broken_frame.ignorable():
+                broken_frame.mark_as_ignored()
+        time.sleep(1)
 
-1と2の組み合わせ。
-    # 特定のフレーム(target)のみハンドリングしてあとは一括待機
-    with frame.start() as session:
-        while session.running():
-            if completed := session.gather():
-                if target in completed:
-                    break
-            try:
-                session.reraise()
-            except UncheckedError as e:
-                if target == e.frame_name:
-                    e.check()
-                    break
-            time.sleep(1)
+---------------[DOC 3.1.2] broken frameの一括エラーチェック(疑似コード)--------------------
 
-        session.wait_done()
+with root.start() OR ctx.start_subframes() as session:
+
+    # 最初に待ち合わせを行う
+    session.wait_done()
+
+    # 後からエラーのあったFrameResultを検証
+    # root.start()のsessionの場合はlen(broken_frames) <= 1なので
+    # if broken_frame := session.get_broken_frame():... の方がよい。
+    if broken_frames := session.get_all_broken_frames():
+        for bf in broken_frames:
+            if incomp_session := bf.get_incomplete_session():
+                ...
+                if ...:
+                    bf.mark_as_unexpected()
+            if error := bf.get_error():
+                ...
+                if ...:
+                    bf.mark_as_unexpected()
+
+            if bf.ignorable():
+                bf.mark_as_ignored()
 """
 from __future__ import annotations
 
@@ -374,19 +393,30 @@ import multiprocessing # noqa: F401  # for documentation / conceptual dependency
 # [API A.1] Foundational Protocols
 #---------------------------------------------------------------------------------------
 
+FrameName = str
+FrameQualname = str
+
 class _HasFrameIdentity(Protocol):
     @property
-    def frame_name(self) -> str:
+    def frame_name(self) -> FrameName:
         """このフレームの名前"""
         ...
     @property
-    def frame_qualname(self) -> str:
+    def frame_qualname(self) -> FrameQualname:
         """このフレームの完全修飾名"""
         ...
 
+SessionName = str
+SessionQualname = str
+
 class _HasSessionIdentity(Protocol):
     @property
-    def session_name(self) -> str:
+    def session_name(self) -> SessionName:
+        """このセッションの名前"""
+        ...
+
+    @property
+    def session_qualname(self) -> SessionQualname:
         """このセッションの名前"""
         ...
 
@@ -416,48 +446,6 @@ class _HasFrameCoordinating(Protocol):
     def running(self) -> bool:
         """フレームが実行中かどうかを判定する"""
         ...
-    
-    def get_frame_status(self, frame_name: str) -> tuple[bool, BaseException | None]:
-        """フレームの実行状態を取得する  
-
-        実行中であるか否かを表すフラグとエラー(なければNone)のtupleを返す。  
-        このメソッドで取り出された例外はチェック済みにならない。  
-        frame_nameが指すフレームが存在しない場合KeyError。  
-        """
-        ...
-
-    def clear_ended_frame(
-            self, frame_name: str, *, suppress: bool = False, log: bool = False
-    ) -> None:
-        """終了済みサブフレームを削除する  
-
-        フレームが終了していない場合FrameStillRunningError。  
-        frame_nameが指すフレームが存在しない場合KeyError。  
-        フレームが未チェック状態の例外を持っていた場合、警告が発生する。  
-        suppressがTrueの場合、未チェック状態の例外に対する警告は抑制される。  
-        suppressの値に関わらずlogがTrueなら未チェック状態の例外はログされる。  
-        .abandon_unchecked_errors()の呼び出しの有無には影響されない。  
-        """
-        ...
-    
-    def gather(self) -> list[str]:
-        """終了したフレーム名を取得する  
-
-        呼び出した時点で例外を伴わずに終了しているフレーム名のリストを返す。  
-        例外を伴わず終了したフレームが存在しない場合、空のリストを返す。  
-        一度返したフレーム名を二度と返さない。  
-        .clear_ended_frame()で消去されたフレーム名は含まれない。
-        """
-        ...
-    
-    def reraise(self, *, unwrap: bool = False) -> None:
-        """フレームの例外をUncheckedErrorでラップして送出する  
-
-        unwrapがTrueであれば、例外はUncheckedErrorにラップされずに元の例外がスローされる。  
-        ラップされずに例外が送出された場合、その例外はチェック済みとなる。  
-        一度スローした例外は未チェック状態のままであっても二度とスローされない。  
-        """
-        ...
 
     def wait_done(self, timeout: float | None = None) -> None:
         """フレームの終了を待ち合わせる  
@@ -466,47 +454,48 @@ class _HasFrameCoordinating(Protocol):
         """
         ...
     
-    def wait_done_and_raise(self, timeout: float | None = None) -> None:
-        """フレームの終了を待ち合わせる  
-
-        timeoutにfloat(sec)が渡され、その時間内にフレームが完了しなかった場合。待機を中断する。  
-        待ち合わせが完了またはタイムアウトした時点で、未チェック状態の例外が存在すればそれらを
-        CollectedErrorでラップして送出する。
-        """
-        ...
-
-    def faulted(self) -> bool:
-        """未チェック状態の例外の有無を判定する"""
-        ...
-    
-    def raise_if_faulted(self):
-        """未チェック状態の例外がある場合CollectedErrorでラップしてスローする  
-
-        スローされた例外はすべてチェック済み例外となる。
+    def get_finished_frame(self) -> FrameResult:
+        """終了したフレームの結果を取得する  
+        
+        一度返されたフレームの結果はこのメソッドから2度と返らない。
         """
         ...
     
-    def drain(self) -> dict[str, BaseException]:
-        """未チェック状態の例外をチェック状態にして取得する  
-
-        未チェック例外が存在しない場合、空のdictを返す。
+    def get_successful_frame(self) -> FrameResult:
+        """正常終了したフレームの結果を取得する  
+        
+        一度返されたフレームの結果はこのメソッドから2度と返らない。
         """
         ...
     
-    def peek_drain(self) -> dict[str, BaseException]:
-        """未チェック状態の例外をチェック状態にせず取得する  
-
-        未チェック例外が存在しない場合、空のdictを返す。
+    def get_broken_frame(self) -> FrameResult:
+        """異常終了したフレームの結果を取得する  
+        
+        一度返されたフレームの結果はこのメソッドから2度と返らない。
         """
         ...
-
-    def abandon_unchecked_errors(self, log: bool = True) -> None:
-        """未チェック状態の例外に対する警告を抑制する  
-
-        このメソッドはフレームの一部が予定通りに終了せず、それらのフレームのハンドリングを放棄して、
-        自身を終了させる直前に使用することが想定されている。  
-        この呼び出し以降、警告の抑制を解除する手段は提供されない。  
-        logがTrueの場合、警告のかわりにログされる。
+    
+    def get_all_finished_frames(self) -> list[FrameResult]:
+        """現時点で終了しているフレームの結果をすべて取得する  
+        
+        複数回呼び出した場合、前回の呼び出しから新たに終了したフレームの結果が  
+        追加されている場合がある。
+        """
+        ...
+    
+    def get_all_successful_frames(self) -> list[FrameResult]:
+        """現時点で正常終了しているフレームの結果をすべて取得する  
+        
+        複数回呼び出した場合、前回の呼び出しから新たに正常終了したフレームの結果が  
+        追加されている場合がある。
+        """
+        ...
+    
+    def get_all_broken_frames(self) -> list[FrameResult]:
+        """現時点で異常終了しているフレームの結果をすべて取得する  
+        
+        複数回呼び出した場合、前回の呼び出しから新たに異常終了したフレームの結果が  
+        追加されている場合がある。
         """
         ...
     
@@ -539,7 +528,7 @@ def create_frame(
         frame_name: str = "",
         subprocess: bool = False,
         handler: bool = True
-    ) -> ConcurrentRootFrame | ParallelRootFrame:
+    ) -> ConcurrentRootFrameBuilder | ParallelRootFrameBuilder:
     """ルートフレームを作成する  
 
     subprocessがTrueならParallelRootFrame、FalseならConcurrentRootFrameを返す。  
@@ -548,7 +537,7 @@ def create_frame(
     frame_nameが空文字列の場合routine.__name__がフレーム名として設定される。  
     どちらからも有効な識別子を得ることができなければMissingNameError  
     handlerがFalseの場合、フレームがハンドラ対応にしていてもハンドラの設定を拒絶する。  
-    frame.as_handler_capable()はNoHandlerCapableErrorを送出するようになる。  
+    frame.supports_handlers()はFalseを返すようになる。  
     subprocessがTrueの場合、handlerフラグは無視される。
     """
     ...
@@ -558,7 +547,7 @@ def create_concurrent_frame(
         *,
         frame_name: str = "",
         handler: bool = True
-    ) -> ConcurrentRootFrame:
+    ) -> ConcurrentRootFrameBuilder:
     """並行ルートフレームを作成する  
 
     このルートフレームはハンドラを設定することができる。  
@@ -566,13 +555,13 @@ def create_concurrent_frame(
     frame_nameが空文字列の場合routine.__name__がフレーム名として設定される。  
     どちらからも有効な識別子を得ることができなければMissingNameError  
     handlerがFalseの場合、ハンドラの設定を拒絶する。  
-    frame.as_handler_capable()はNoHandlerCapableErrorを送出するようになる。  
+    frame.supports_handlers()はFalseを返すようになる。  
     """
-    return cast(ConcurrentRootFrame, create_frame(
+    return cast(ConcurrentRootFrameBuilder, create_frame(
         routine, frame_name = frame_name, subprocess = False, handler = handler)
     )
 
-def create_parallel_frame(routine: Routine, frame_name: str = "") -> ParallelRootFrame:
+def create_parallel_frame(routine: Routine, frame_name: str = "") -> ParallelRootFrameBuilder:
     """並列ルートフレームを作成する  
 
     このルートフレームはハンドラを設定することできない。  
@@ -580,7 +569,7 @@ def create_parallel_frame(routine: Routine, frame_name: str = "") -> ParallelRoo
     frame_nameが空文字列の場合routine.__name__がフレーム名として設定される。  
     どちらからも有効な識別子を得ることができなければMissingNameError  
     """
-    return cast(ParallelRootFrame, create_frame(
+    return cast(ParallelRootFrameBuilder, create_frame(
         routine, frame_name = frame_name, subprocess = True, handler = False)
     )
 
@@ -607,7 +596,7 @@ class Context(_HasFrameIdentity, _HasLogging, Protocol):
     def request(self) -> MessageReader:
         """フレームに対する要求・指示  
 
-        SessionまたはCoordinaterが更新する。
+        SessionまたはCoordinatorが更新する。
         """
         ...
 
@@ -625,20 +614,24 @@ class Context(_HasFrameIdentity, _HasLogging, Protocol):
         """フレーム間の共有状態  
 
         すべてのフレームとSubFrameSessionが更新を行う。  
-        ルートフレームがParallelRootFrameの場合、このメッセージに対する値はピッケル化
+        ルートフレームがParallelRootFrameの場合、このメッセージに対する値はピクル化
         可能でなくてはならない
         """
         ...
 
-    def create_subframe(self, routine: Routine, frame_name: str = "", handler: bool = True) -> SubFrame:
+    def define_subframe(self, routine: Routine, frame_name: str = "", handler: bool = True) -> SubFrameBuilder:
         """フレームにサブフレームを追加する  
+
+        SubFrameは個別に開始することができない。サブフレームの開始には
+        .start_subframes()を使用する。  
+        サブフレームの実行を開始した後、このメソッドを呼び出した場合ContextStateError  
 
         frame_nameがすでにこのフレームに存在する場合ValueError  
         frame_nameにはこのフレームの名前を指定する。  
         frame_nameが空文字列の場合routine.__name__がフレーム名として設定される。  
         どちらからも有効な識別子を得ることができなければMissingNameError  
         handlerがFalseの場合、フレームがハンドラ対応にしていてもハンドラの設定を拒絶する。  
-        frame.as_handler_capable()はNoHandlerCapableErrorを送出するようになる。  
+        frame.supports_handlers()はFalseを返すようになる。  
         フレームがハンドラに対応していない場合、handlerフラグは無視される。
         """
         ...
@@ -647,15 +640,11 @@ class Context(_HasFrameIdentity, _HasLogging, Protocol):
         """フレームがハンドラに対応しているか判定する"""
         ...
     
-    def start_subframes(
-            self, *subframes: SubFrame
-        ) -> ContextManager[SubFrameSession]:
-        """複数のサブフレームをスタートし、コーディネーターを返す  
-
-        サブフレームはself.create_subframe()またはself.create_ipc_subframe()で
-        作成されたサブフレームでなければならない。  
-        他のContextによって作成されたサブフレームを指定した場合CrossContextError  
-        subframesが空ならValueError  
+    def start_subframes(self) -> ContextManager[SubSession]:
+        """コンテキストに設定されている全てのサブフレームをスタートする  
+        
+        このメソッドは一つのContextにつき、一度しか呼び出すことができない。  
+        2回目以降の呼び出しがあった場合ContextStateError
         """
         ...
 
@@ -664,40 +653,26 @@ class Context(_HasFrameIdentity, _HasLogging, Protocol):
 # [API B.3] Exception Hierarchy
 #---------------------------------------------------------------------------------------
 
-class FrameError(Exception):
+class GpFrameBaseError(Exception):
     """フレームワーク由来例外のベースクラス  
 
     このクラスおよびその派生クラスは、通常フレームワーク内部で生成される。  
     """
     pass
 
-class MissingNameError(FrameError):
+class FrameStateError(GpFrameBaseError):
+    """Frameの生成やハンドリングに由来する例外のベースクラス"""
+    pass
+
+class MissingNameError(FrameStateError):
     """有効なフレーム名が存在しない場合にスローされる"""
     pass
 
-class CrossContextError(FrameError):
-    """サブフレームをそれを生成したコンテキスト以外のコンテキスト
-
-    実行しようとした場合スローされる
-    """
-    pass
-
-class FrameStillRunningError(FrameError):
+class FrameStillRunningError(FrameStateError):
     """フレームの動作中に削除を試みた場合にスローされる"""
     pass
 
-class UncheckedError(_HasFrameIdentity, FrameError):
-    """フレームが送出した例外の再スロー用ラッパー"""
-    @property
-    def cause(self) -> BaseException:
-        """フレームが送出した例外インスタンス"""
-        ...
-
-    def check(self) -> None:
-        """フレームが送出した例外(self.cause)をチェック済み例外にする"""
-        ...
-
-class MessageError(FrameError):
+class MessageError(GpFrameBaseError):
     """Message由来例外のベースクラス"""
 
 class RedefineError(MessageError):
@@ -717,6 +692,10 @@ class MessageTypeError(MessageError, TypeError):
     """
     pass
 
+class MessageValueError(MessageError, ValueError):
+    """メッセージの値に不整合があった場合にスローされる"""
+    pass
+
 class ConsumedError(MessageError):
     """値が存在しない場合にスローされる"""
     pass
@@ -726,13 +705,12 @@ class IPCError(MessageError):
     pass
 
 class IPCValueError(IPCError, ValueError):
-    """値のピッケル化が失敗した場合にスローされる"""
+    """値のピクル化が失敗した場合にスローされる"""
     pass
 
 class IPCConnectionError(IPCError):
     """IPCの通信自体が失敗した場合にスローされる"""
     pass
-
 
 # +====================================================================================+
 # |  >>> [API C] AUTO-COMPLETION PROTOCOLS (USER-VISIBLE, NOT DIRECTLY IMPORTED)       |
@@ -762,12 +740,12 @@ RedoHandler = Union[
 
 
 #=======================================================================================
-# [API C.2] Frame Protocols
+# [API C.2] Builder Protocols
 #---------------------------------------------------------------------------------------
-class Frame(Protocol):
+class FrameBuilder(Protocol):
     pass
 
-class RootFrame(Frame, _HasFrameIdentity, _HasLogger, Protocol):
+class RootFrameBuilder(FrameBuilder, _HasFrameIdentity, _HasLogger, Protocol):
     def set_environments(self, environments: dict[str, Any]) -> None:
         """環境変数の初期値を設定する"""
         ...
@@ -775,7 +753,7 @@ class RootFrame(Frame, _HasFrameIdentity, _HasLogger, Protocol):
         """リクエストの初期値を設定する"""
         ...
 
-    def start(self) -> ContextManager[RootFrameSession]:
+    def start(self) -> ContextManager[RootSession]:
         """このフレームを開始する  
 
         フレームのセッションはコンテキストマネージャーを通して取得する。
@@ -786,18 +764,18 @@ class RootFrame(Frame, _HasFrameIdentity, _HasLogger, Protocol):
         """フレームがハンドラに対応しているか判定する"""
         ...
 
-class ConcurrentRootFrame(RootFrame, _HasHandlerSetting, Protocol):
+class ConcurrentRootFrameBuilder(RootFrameBuilder, _HasHandlerSetting, Protocol):
     def _for_concurrent(self) -> None:
         """プロトコル分類用ダミーメソッド"""
         ...
 
-class ParallelRootFrame(RootFrame, Protocol):
+class ParallelRootFrameBuilder(RootFrameBuilder, Protocol):
     def _for_parallel(self) -> None:
         """プロトコル分類用ダミーメソッド"""
         ...
 
 
-class SubFrame(Frame, _HasFrameIdentity, _HasLogger, Protocol):
+class SubFrameBuilder(FrameBuilder, _HasFrameIdentity, _HasLogger, Protocol):
     """サブフレームのベースプロトコル  
 
     SubFrameはそれ自体を単独で起動することができない。  
@@ -807,12 +785,12 @@ class SubFrame(Frame, _HasFrameIdentity, _HasLogger, Protocol):
         """プロトコル分類用ダミーメソッド"""
         ...
 
-class ConcurrentSubFrame(SubFrame, _HasHandlerSetting, Protocol):
+class ConcurrentSubFrameBuilder(SubFrameBuilder, _HasHandlerSetting, Protocol):
     def _for_concurrent(self) -> None:
         """プロトコル分類用ダミーメソッド"""
         ...
 
-class ParallelSubFrame(SubFrame, Protocol):
+class ParallelSubFrameBuilder(SubFrameBuilder, Protocol):
     def _for_parallel(self) -> None:
         """プロトコル分類用ダミーメソッド"""
         ...
@@ -831,6 +809,11 @@ class MessageReader(Message, Protocol):
     メッセージはIPCで接続されている場合がある。  
     この時IPCの接続に問題があり、読み取りが失敗した場合IPCConnectionError
     """
+
+    def exists(self, key: KeyType) -> bool:
+        """キーが存在するか判定する"""
+        ...
+    
     def get(self, key: KeyType, typ: type[_T]) -> _T:
         """キーに対応する値を取得する  
 
@@ -908,9 +891,9 @@ class MessageReader(Message, Protocol):
 class MessageUpdater(MessageReader, Protocol):
     """同期化メッセージ更新用インターフェース  
 
-    メッセージの値がピッケル化可能に制限されている場合がある(IPC使用時)。  
+    メッセージの値がピクル化可能に制限されている場合がある(IPC使用時)。  
     MessageUpdaterはこの制限に対して静的な型チェックを提供しない。  
-    値の更新時にピッケル化に関してエラーが起こった場合IPCValueError  
+    値の更新時にピクル化に関してエラーが起こった場合IPCValueError  
     IPCの接続に問題があり、更新できなかった場合IPCConnectionError
     """
 
@@ -978,13 +961,13 @@ class MessageUpdater(MessageReader, Protocol):
         キーが存在しない場合はMessageKeyError  
         キー自体は削除されない。  
         typがkeyの要求する型と同一でなければMessageTypeError  
-        valueがkeyの要求する型のインスタンスでなければMessageTypError  
+        valueがkeyの要求する型のインスタンスでなければMessageTypeError  
         値が消費済みである場合はMessageConsumedError  
         """
         ...
     
     def batch(self) -> ContextManager[BatchOperator]:
-        """不可分操作用のBatchOpertorを取得する  
+        """不可分操作用のBatchOperatorを取得する  
 
         ロックを保持したままメッセージに対して複数の処理を行う。  
         withブロック内ではロックを保持しているので、BatchOperatorが提供する
@@ -996,15 +979,15 @@ class MessageUpdater(MessageReader, Protocol):
 class MessageDefiner(MessageReader, Protocol):
     """同期化メッセージ定義用インターフェース  
 
-    メッセージの値がピッケル化可能に制限されている場合がある(IPC使用時)。  
+    メッセージの値がピクル化可能に制限されている場合がある(IPC使用時)。  
     MessageDefinerはこの制限に対して静的な型チェックを提供しない。  
-    値の更新時にピッケル化に関してエラーが起こった場合IPCValueError  
+    値の更新時にピクル化に関してエラーが起こった場合IPCValueError  
     IPCの接続に問題があり、更新できなかった場合IPCConnectionError
     """
     def define(self, key: KeyType, typ: type[_T], value: _T) -> None:
         """キーを定義し型と値を設定する  
 
-        すでに定義済みのキーであった場合DefinedKeyError  
+        すでに定義済みのキーであった場合RedefineError  
         typにtype(None)を指定した場合MessageTypeError  
         valueがtypのインスタンスでない場合MessageTypeError  
         """
@@ -1013,9 +996,9 @@ class MessageDefiner(MessageReader, Protocol):
 class MessageManager(MessageUpdater, MessageDefiner, Protocol):
     """同期化メッセージ定義・更新用(フルコントロール)インターフェース  
 
-    メッセージの値がピッケル化可能に制限されている場合がある(IPC使用時)。  
+    メッセージの値がピクル化可能に制限されている場合がある(IPC使用時)。  
     MessageManagerはこの制限に対して静的な型チェックを提供しない。  
-    値の更新時にピッケル化に関してエラーが起こった場合IPCValueError  
+    値の更新時にピクル化に関してエラーが起こった場合IPCValueError  
     IPCの接続に問題があり、更新できなかった場合IPCConnectionError
     """
     ...
@@ -1025,13 +1008,13 @@ class BatchOperator(Protocol):
 
     値の読み書きとクエリを提供する。  
     既存キーに対してのみ操作を行うことができる。  
-    keyの新規作成はMessageUpdater.embed()を使用する。
+    keyの新規作成を行うことはできない。  
     """
     def exists_key(self, key: KeyType) -> bool:
         """キーが存在するか判定する"""
         ...
 
-    def get_value(self, Key: KeyType, typ: type[_T]) -> _T:
+    def get_value(self, key: KeyType, typ: type[_T]) -> _T:
         """値を取得する  
 
         キーが存在しない場合はMessageKeyError  
@@ -1086,7 +1069,7 @@ class Session(
         """
         ...
     
-class RootFrameSession(Session, Protocol):
+class RootSession(Session, Protocol):
     def _for_root(self) -> None:
         """プロトコル分類用ダミーメソッド"""
         ...
@@ -1102,7 +1085,7 @@ class RootFrameSession(Session, Protocol):
     def request(self) -> MessageManager:
         """フレームに対する要求・指示  
 
-        ルートフレームがParallelRootFrameの場合、このメッセージに対する値はピッケル化
+        ルートフレームがParallelRootFrameの場合、このメッセージに対する値はピクル化
         可能でなくてはならない
         """
         ...
@@ -1115,7 +1098,7 @@ class RootFrameSession(Session, Protocol):
         """
         ...
 
-class SubFrameSession(Session, Protocol):
+class SubSession(Session, Protocol):
     """サブフレーム群の部分的な同期を制御するためのセッション  
 
     Messageの読み書きはContextを使用する。  
@@ -1123,3 +1106,98 @@ class SubFrameSession(Session, Protocol):
     def _for_subframe(self) -> None:
         """プロトコル分類用ダミーメソッド"""
         ...
+
+#=======================================================================================
+# [API C.5] Result Protocols
+#---------------------------------------------------------------------------------------
+
+class FrameErrorRecord(_HasFrameIdentity):
+    def get(self) -> BaseException:
+        """Frameが投げた例外を取得する"""
+        ...
+
+class SessionResult(Protocol):
+    """Sessionの制御結果"""
+    
+    def completes(self) -> bool:
+        """セッションが完全に終了しているか判定する  
+        
+        制御対象のframeにbroken frameが含まれる場合、制御終了時に動作を停止していないframe
+        が存在する場合、セッションの処理中に例外が発生した場合はFalseを返す。
+        """
+        ...
+
+    def get_frame_errors(self) -> list[FrameErrorRecord]:
+        """broken frameの識別子と例外のペアのリストを返す"""
+        ...
+    
+    def get_stuck_running_frames(self) -> list[tuple[FrameName, FrameQualname]]:
+        """セッションの終了時に停止していないフレームの識別子のリストを返す  
+
+        フレームはセッションが終了時に停止していないことを表し、このメソッドの呼び出し時点に
+        おいて動作中であることは保証されない。
+        """
+        ...
+    
+    def get_error(self) -> BaseException | None:
+        """セッション自体が送出した例外を取得する"""
+        ...
+
+class FrameResult(_HasFrameIdentity, Protocol):
+    """Frameの実行結果  
+
+    frameには戻り値の概念がないため、戻り値を得ることはできない。このプロトコルはフレームの  
+    実行結果の成否とその原因の提供。または、結果を分類するためのマークインターフェースを提供  
+    する。
+    """
+    def successful(self) -> bool:
+        """frameが成功しているかどうかを判定する  
+
+        frameが例外を送出している、ncomplete sessionを含んでいる。これらの場合Falseを返す。
+        """
+        ...
+    
+    def ignorable(self) -> bool:
+        """実行結果が「想定外」にマークされていないかどうか判定する  
+        
+        ignorableとはignoredでマークされているかではなく、unexpectedで
+        マークされていないかどうかのみで判定する。
+        """
+        ...
+    
+    def get_error(self) -> BaseException | None:
+        """このフレームが送出した例外を取得する  
+
+        内包するSessionから送出された例外はここに含まれない。
+        """
+        ...
+
+    def get_session(self) -> SessionResult | None:
+        """このフレームが内包するSessionの結果を取得する  
+
+        Sessionを内包していない場合はNoneを返す。
+        """
+        ...
+    
+    def get_incomplete_session(self) -> SessionResult | None:
+        """このフレームが内包するSessionがincompleteだった場合にSessionResultを返す  
+
+        Sessionを内包していない場合やSessionが完全である場合にはNoneを返す。
+        """
+        ...
+
+    def mark_as_ignored(self) -> None:
+        """このFrameResultに「無視」をマークする  
+        
+        FrameResultを「無視」にマークするということはこの中に含まれる
+        incomplete sessionも同時に「無視」にマークされる。
+        frameが失敗していなくてもこの挙動は変わらない。
+        """
+        ...
+
+    def mark_as_unexpected(self, reason: str = "") -> None:
+        """このFrameResultを「想定外」にマークする  
+        
+        reasonには付加情報を表す文字列を指定する。
+        """
+
