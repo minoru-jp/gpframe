@@ -176,8 +176,10 @@ session.get_frame_result()を使用してそれを取得する。
 *1: すべてのFrameResultはRootFrameと同プロセス、同スレッドにストアされ管理される。
 *2: Handlerはスレッドでの実行時のみ設定できる
 
-                ┌─ gpframe ───────────────────────────────────────────┐
-                │                                                     │
+      User ─────────────┐               
+                        │ create_frame()                                
+                        │                                              
+                ┌───────▼─────────────────────────────── gpframe ─────┐
                 │   RootFrame ──────────▶ _Agent ────┐                │
      broken     │       │                            │                │
   FrameResult  end      ▼                            │                │
