@@ -373,9 +373,18 @@ from __future__ import annotations
 from enum import Enum
 import logging
 
-from typing import Protocol, Any, Awaitable, Callable, Union, ContextManager, cast
+from typing import Protocol, Any, Awaitable, Callable, TypeVar, Union, ContextManager, cast
 
-from gpframe._impl.common import _T, _noop, _any_str, _any_int, _any_float
+_T = TypeVar("_T")
+
+def _any_str(v: str) -> bool:
+    return True
+def _any_int(v: int) -> bool:
+    return True
+def _any_float(v: float) -> bool:
+    return True
+def _noop(v: str) -> str:
+    return v
 
 # +====================================================================================+
 # |  >>> [API A] CONCEPTUAL AND FOUNDATIONAL DEPENDENCIES                              |
