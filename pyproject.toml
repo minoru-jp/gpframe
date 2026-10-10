@@ -4,45 +4,71 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gpframe"
-version = "0.0.34"
-description = "A general-purpose framework for routine execution with concurrency and event handling."
+version = "0.1.0"
+description = "Run threads inside a scope that makes failures acknowledged and reports work that did not stop."
 readme = { file = "README.md", content-type = "text/markdown" }
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { file = "LICENSE" }
-authors = [
-    { name = "minoru_jp" }
-]
+authors = [{ name = "minoru_jp" }]
 classifiers = [
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "License :: OSI Approved :: MIT License",
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
 ]
-keywords = [
-    "general-purpose",
-    "framework",
-    "concurrency",
-    "async",
-    "subprocess",
-    "event",
-    "lifecycle",
-    "context",
-    "wrapper",
-    "skeleton",
-    "workflow",
-    "execution",
-]
+keywords = ["threading", "concurrency", "structured-concurrency", "session", "error-handling"]
+dependencies = []
+
+[project.optional-dependencies]
+# 検査に使う道具。tools/check.py が使い、CI とリリースでも同じ版で検査する。
+test = ["pytest>=8.0", "shikumi-contrace==0.1.0"]
+lint = ["ruff==0.16.10"]
+typecheck = ["basedpyright==1.40.2"]
+docs = ["shikumi-devdoc==0.3.5"]
+dist = ["build==1.6.1", "twine==7.0.0"]
+dev = ["gpframe[test,lint,typecheck,docs,dist]"]
 
 [project.urls]
 Homepage = "https://github.com/minoru-jp/gpframe"
 Source = "https://github.com/minoru-jp/gpframe"
 Issues = "https://github.com/minoru-jp/gpframe/issues"
 
-
 [tool.setuptools]
-package-dir = {"" = "src"}
+package-dir = { "" = "src" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["gpframe*"]
+
+[tool.setuptools.package-data]
+gpframe = ["py.typed"]
+
+[tool.ruff]
+target-version = "py311"
+
+[tool.basedpyright]
+# パッケージ本体と公開 API の形(contract/ports)を厳しめの設定で検査する。
+# 契約、テスト、文書の正本は tests/pyrightconfig.json で利用側として検査する。
+include = ["src", "contract/ports", "tools", "examples"]
+pythonVersion = "3.11"
+typeCheckingMode = "recommended"
+# typing.override は 3.12 から。3.11 対応のために typing_extensions へ依存しない。
+reportImplicitOverride = "none"
+# セッション・フレーム・コンテキストは同じモジュールで互いの内部状態を扱う。
+# 先頭の _ は package の外への公開境界を表し、Python の強制的なアクセス制御ではない。
+reportPrivateUsage = "none"
+reportUnnecessaryTypeIgnoreComment = "warning"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-p shikumi_contrace.pytest --contrace-check"
+filterwarnings = ["error"]
+contrace_contract_assets = ["contract"]
+contrace_tests = ["tests"]
+contrace_implementations = ["gpframe"]
